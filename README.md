@@ -5,6 +5,7 @@
 ## 功能
 
 - `/生图 <描述>` - 使用 ComfyUI 生成图片（支持自然语言描述）
+- `/生图 -p <正面提示词> -n <负面提示词>` - 直接使用提示词生成（跳过 LLM）
 - `/生图帮助` - 显示帮助信息
 - LLM 自动将中文描述转换为英文提示词
 - 自动识别工作流节点（正面/负面提示词、输出节点）
@@ -24,7 +25,7 @@
 
 ```toml
 [plugin]
-config_version = "1.0.0"
+config_version = "1.0.1"
 enabled = true
 debug_log = false  # 调试日志开关
 
@@ -42,10 +43,28 @@ max_tokens = 5000               # LLM 响应的最大 token
 ## 使用方法
 
 ```
+# LLM 解析模式（自动翻译中文描述）
+/生图 一个可爱的女孩，蓝色头发，微笑
+/生图 樱花树下的少女，动漫风格
+/生图 恰斯卡  # 原神角色，会自动补充角色特征
+
+# 直接提示词模式（跳过 LLM，适用于已知提示词）
+/生图 -p 1girl, blue hair, smile -n low quality, blurry
+/生图 -p masterpiece, 1girl, cherry blossoms, anime style
+
+/生图帮助
+```
+# LLM 解析模式（自动翻译中文描述）
 /生图 一个可爱的女孩，蓝色头发，微笑
 /生图 樱花树下的少女，动漫风格
 /生图 恰斯卡  # 原神角色，会自动补充角色特征
 /生图 两个女孩在喝咖啡  # 多人场景
+
+# 直接提示词模式（跳过 LLM，适用于已知提示词）
+/生图 /p 1girl, blue hair, smile, school uniform /n low quality, blurry
+/生图 /p masterpiece, 1girl, cherry blossoms, anime style
+/生图直接 /p 1girl, long hair, looking at viewer /n deformed, ugly
+
 /生图帮助
 ```
 

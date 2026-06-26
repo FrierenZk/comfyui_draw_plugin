@@ -36,7 +36,7 @@ _HARD_RULES = """
 **已知二次元角色（有具体作品出处）**
 - 写法：`character_name (series)`，如 `hatsune miku (vocaloid)`
 - 适当增加角色名权重：`(character_name (series):1.1)`
-- 自动补充与用户描述不冲突的角色特征（如发色、发型、服装等），尽量详细还原角色特征
+- 自动补充与用户描述不冲突的角色特征（如发色、发型、服装等），尽量提取更多细节特征，将这些特征转换为提示词来还原角色特征
 - 如果用户明确指定了外貌（如"蓝发"），则以用户描述为准
 
 **原创人物（无具体出处）**
@@ -126,34 +126,28 @@ PROMPT_GENERATOR_TEMPLATE = build_prompt_generator_template()
 
 # ==================== 默认提示词 ====================
 
-DEFAULT_NEGATIVE_PROMPT = "low quality, blurry, distorted, deformed, ugly, bad anatomy, disfigured, poorly drawn face, mutation, mutated, extra limbs, extra fingers, watermark, text, signature, nsfw"
+DEFAULT_NEGATIVE_PROMPT = "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, deformed, ugly, duplicate, out of frame, extra limbs, disfigured, gross proportions, malformed limbs, fused fingers, too many fingers, long neck, cross-eyed"
 
 QUALITY_TAGS = "masterpiece, best quality, highly detailed, ultra-detailed, 8k"
 
 # 人物类正面提示词细节词
 CHARACTER_DETAIL_TAGS = ["detailed face", "detailed eyes", "beautiful detailed hair"]
 
-# 人物类负面提示词（完整版）
+# 人物类负面提示词
 CHARACTER_NEGATIVE_TAGS = [
-    "lowres", "bad anatomy", "bad hands", "text", "error", "missing fingers", 
-    "extra digit", "fewer digits", "cropped", "worst quality", "low quality", 
-    "normal quality", "jpeg artifacts", "signature", "watermark", "username", 
-    "blurry", "deformed", "ugly", "duplicate", "morbid", "mutilated", 
-    "out of frame", "extra limbs", "cloned face", "disfigured", 
-    "gross proportions", "malformed limbs", "missing arms", "missing legs", 
-    "extra arms", "extra legs", "fused fingers", "too many fingers", 
-    "long neck", "cross-eyed", "muscular female", "bodybuilder", 
-    "overly muscular", "masculine face", "bad face", "asymmetrical face", 
-    "deformed face", "ugly face", "bad eyes", "asymmetrical eyes", 
-    "deformed eyes", "long eyelashes on men", "makeup"
+    "lowres", "bad anatomy", "bad hands", "text", "error", "missing fingers",
+    "extra digit", "fewer digits", "cropped", "worst quality", "low quality",
+    "normal quality", "jpeg artifacts", "signature", "watermark", "username",
+    "blurry", "deformed", "ugly", "duplicate", "out of frame", "extra limbs",
+    "disfigured", "gross proportions", "malformed limbs", "fused fingers",
+    "too many fingers", "long neck", "cross-eyed"， "nsfw"
 ]
 
 # 非人物类负面提示词（基础版）
 NON_CHARACTER_NEGATIVE_TAGS = [
-    "lowres", "low quality", "worst quality", "normal quality", 
-    "jpeg artifacts", "signature", "watermark", "username", "blurry", 
-    "text", "error", "cropped", "duplicate", "out of frame", "deformed", 
-    "ugly", "morbid", "mutilated"
+    "lowres", "low quality", "worst quality", "jpeg artifacts",
+    "signature", "watermark", "blurry", "text", "error", "cropped",
+    "duplicate", "out of frame", "deformed", "ugly"
 ]
 
 # 人物类关键词检测

@@ -82,9 +82,13 @@ class ComfyUIDrawInvocation:
     async def disconnect(self):
         """断开 MCP 连接"""
         if self._exit_stack:
-            await self._exit_stack.aclose()
-            self._exit_stack = None
-            self._session = None
+            try:
+                await self._exit_stack.aclose()
+            except RuntimeError:
+                pass
+            finally:
+                self._exit_stack = None
+                self._session = None
 
     async def call_tool(self, tool_name: str, arguments: dict) -> Optional[Any]:
         """调用 MCP 工具"""
@@ -100,6 +104,123 @@ class ComfyUIDrawInvocation:
         except Exception as e:
             self.logger.error(f"调用 MCP 工具失败: {e}")
             return None
+
+    async def generate_image_with_prompts(self, stream_id: str, positive_prompt: str, negative_prompt: str):
+        """直接使用提示词生成图片（跳过 LLM）"""
+        try:
+            # 1. 连接 MCP
+            if not await self.connect():
+                await self._send_message(stream_id, "❌ 连接 ComfyUI 失败")
+                return
+
+            # 2. 获取工作流
+            workflow_file = self._get_config("comfyui", "workflow_file", "麦麦工作流.json")
+            workflow_result = await self.call_tool("get_workflow", {
+                "filename": workflow_file,
+                "format": "api"
+            })
+            
+            if not workflow_result:
+                await self._send_message(stream_id, "❌ 获取工作流失败")
+                return
+            
+            workflow = self._parse_tool_result(workflow_result)
+            if not workflow:
+                await self._send_message(stream_id, "❌ 解析工作流失败")
+                return
+            
+            self._debug_log(f"获取工作流成功，节点数: {len(workflow)}")
+
+            # 3. 处理提示词（应用质量词等规则）
+            pos_list = [t.strip() for t in positive_prompt.split(",")]
+            neg_list = [t.strip() for t in negative_prompt.split(",")] if negative_prompt else []
+            
+            pos_list = self._ensure_quality_tags(pos_list)
+            pos_list = merge_person_tags(pos_list)
+            if neg_list:
+                neg_list = self._ensure_negative_tags(pos_list, neg_list)
+            else:
+                neg_list = DEFAULT_NEGATIVE_PROMPT.split(", ")
+            
+            positive = ", ".join(pos_list)
+            negative = ", ".join(neg_list)
+
+            self._debug_log(f"正面提示词: {positive[:100]}")
+            self._debug_log(f"负面提示词: {negative[:100]}")
+
+            await self._send_message(stream_id, "正在生成图片，请稍候...")
+
+            # 4. 修改工作流
+            modified_workflow = self.modify_workflow(workflow, positive, negative)
+
+            # 5. 提交任务
+            enqueue_result = await self.call_tool("enqueue_workflow", {
+                "workflow": modified_workflow
+            })
+            
+            if not enqueue_result:
+                await self._send_message(stream_id, "❌ 提交任务失败")
+                return
+            
+            prompt_id = self._extract_prompt_id(enqueue_result)
+            if not prompt_id:
+                await self._send_message(stream_id, "❌ 获取任务 ID 失败")
+                return
+            
+            self._debug_log(f"任务已提交，prompt_id: {prompt_id}")
+
+            # 6. 等待完成
+            completed = False
+            for i in range(60):
+                await asyncio.sleep(5)
+                
+                status_result = await self.call_tool("get_job_status", {
+                    "prompt_id": prompt_id
+                })
+                
+                if status_result:
+                    status_data = self._parse_tool_result(status_result)
+                    if status_data and status_data.get("done"):
+                        self._debug_log("任务完成")
+                        completed = True
+                        break
+                    if status_data and status_data.get("error"):
+                        await self._send_message(stream_id, "❌ 图片生成失败")
+                        return
+                
+                self._debug_log(f"等待中... {(i+1)*5}秒")
+
+            if not completed:
+                await self._send_message(stream_id, "❌ 图片生成超时")
+                return
+
+            # 7. 获取图片
+            history_result = await self.call_tool("get_history", {
+                "prompt_id": prompt_id
+            })
+            
+            filename = self._extract_filename(history_result)
+            if not filename:
+                await self._send_message(stream_id, "❌ 获取图片文件名失败")
+                return
+            
+            image_result = await self.call_tool("get_image", {"filename": filename})
+            if not image_result:
+                await self._send_message(stream_id, "❌ 获取图片失败")
+                return
+            
+            image_base64 = self._extract_image_base64(image_result)
+            if image_base64:
+                await self.plugin.ctx.send.image(image_base64, stream_id)
+                await self._send_message(stream_id, "图片生成完成！")
+            else:
+                await self._send_message(stream_id, "❌ 解析图片数据失败")
+
+        except Exception as e:
+            self.logger.error(f"生成图片失败: {e}")
+            await self._send_message(stream_id, "❌ 图片生成失败，请稍后重试")
+        finally:
+            await self.disconnect()
 
     async def generate_image(self, stream_id: str, description: str):
         """生成图片主流程"""

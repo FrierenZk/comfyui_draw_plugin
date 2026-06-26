@@ -1,5 +1,6 @@
 from typing import Any, ClassVar, Iterable
 import re
+import asyncio
 
 from maibot_sdk import MaiBotPlugin, PluginConfigBase, Field, Command
 
@@ -12,7 +13,7 @@ class PluginSection(PluginConfigBase):
     """插件基础配置"""
     __ui_label__ = "基础设置"
 
-    config_version: str = Field(default="1.0.0", description="配置版本号")
+    config_version: str = Field(default="1.0.1", description="配置版本号")
     enabled: bool = Field(default=True, description="是否启用插件")
     debug_log: bool = Field(default=False, description="是否启用调试日志")
 
@@ -95,15 +96,18 @@ class ComfyUIDrawPlugin(MaiBotPlugin):
     @Command(
         "生图",
         description="使用 ComfyUI 麦麦工作流生成图片",
-        pattern=r"^/生图\s*(?P<description>.+)$"
+        pattern=r"^/生图(?=\s|$)"
     )
     async def handle_draw_command(self, **kwargs):
         """处理 /生图 命令"""
         stream_id = kwargs.get("stream_id", "")
-        matched_groups = kwargs.get("matched_groups", {})
-        description = matched_groups.get("description", "").strip()
+        text = kwargs.get("text", "").strip()
+        
+        content = text
+        if content.startswith("/生图"):
+            content = content[3:].strip()
 
-        if not description:
+        if not content:
             await self.ctx.send.text("请提供描述，例如：/生图 一个可爱的女孩", stream_id)
             return False, "缺少描述", 1
 
@@ -111,9 +115,33 @@ class ComfyUIDrawPlugin(MaiBotPlugin):
             await self.ctx.send.text("插件未初始化，请稍后再试", stream_id)
             return False, "插件未初始化", 1
 
-        # 直接调用 MCP 工具生成图片
-        await self.invocation.generate_image(stream_id, description)
+        positive, negative = self._parse_direct_prompts(content)
+        if positive:
+            asyncio.create_task(self._run_draw(stream_id, positive, negative or "", direct=True))
+        else:
+            asyncio.create_task(self._run_draw(stream_id, content, "", direct=False))
         return True, "图片生成中", 2
+
+    async def _run_draw(self, stream_id: str, positive: str, negative: str, direct: bool):
+        """在独立 task 中执行图片生成"""
+        invocation = ComfyUIDrawInvocation(self)
+        try:
+            if direct:
+                await invocation.generate_image_with_prompts(stream_id, positive, negative)
+            else:
+                await invocation.generate_image(stream_id, positive)
+        except Exception as e:
+            self.ctx.logger.error(f"[生图] task 异常: {e}")
+
+    def _parse_direct_prompts(self, content: str) -> tuple:
+        """解析 -p 或 /p 正面 -n 或 /n 负面 格式"""
+        cleaned = re.sub(r'\s+', ' ', content).strip()
+        match = re.search(r'[-/]p\s+(.+?)(?:\s+[-/]n\s+(.+))?$', cleaned)
+        if match:
+            positive = match.group(1).strip().rstrip(',').strip()
+            negative = match.group(2).strip().rstrip(',').strip() if match.group(2) else ""
+            return positive, negative
+        return None, None
 
     @Command(
         "生图帮助",
@@ -127,12 +155,13 @@ class ComfyUIDrawPlugin(MaiBotPlugin):
             "ComfyUI 麦麦工作流绘图插件\n"
             "━━━━━━━━━━━━━━━━━━━━━━\n"
             "命令：\n"
-            "  /生图 <描述> - 生成图片\n"
+            "  /生图 <描述> - LLM 解析后生成图片\n"
+            "  /生图 -p <正面> -n <负面> - 直接使用提示词\n"
             "  /生图帮助 - 显示此帮助\n"
             "\n"
             "示例：\n"
-            "  /生图 一个可爱的女孩，蓝色头发，微笑\n"
-            "  /生图 樱花树下的少女，动漫风格\n"
+            "  /生图 一个可爱的女孩，蓝色头发\n"
+            "  /生图 -p 1girl, blue hair -n low quality\n"
         )
         await self.ctx.send.text(help_text, stream_id)
         return True, "帮助信息已发送", 1

@@ -2,7 +2,7 @@
 # 通过 MCP 连接 ComfyUI，使用麦麦工作流生成图片。
 
 [plugin]
-config_version = "1.0.0"
+config_version = "1.0.1"
 # 是否启用插件
 enabled = true
 # 是否启用调试日志
