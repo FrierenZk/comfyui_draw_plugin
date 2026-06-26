@@ -1,0 +1,42 @@
+{
+  "manifest_version": 2,
+  "version": "1.0.0",
+  "name": "ComfyUI 麦麦工作流绘图插件（comfyui_draw_plugin）",
+  "description": "通过 MCP 连接 ComfyUI，使用麦麦工作流生成图片。支持 /生图 命令，自动将中文描述转换为英文提示词。",
+  "author": {
+    "name": "FrierenZk",
+    "url": "https://github.com/FrierenZk"
+  },
+  "license": "MIT",
+  "urls": {
+    "repository": "https://github.com/FrierenZk/comfyui_draw_plugin",
+    "homepage": "https://github.com/FrierenZk/comfyui_draw_plugin",
+    "documentation": "https://github.com/FrierenZk/comfyui_draw_plugin",
+    "issues": "https://github.com/FrierenZk/comfyui_draw_plugin/issues"
+  },
+  "host_application": {
+    "min_version": "0.10.0",
+    "max_version": "1.99.99"
+  },
+  "sdk": {
+    "min_version": "2.0.0",
+    "max_version": "2.99.99"
+  },
+  "dependencies": [],
+  "capabilities": [
+    "config.get_all",
+    "send.command",
+    "send.custom",
+    "send.text",
+    "send.image",
+    "llm.generate",
+    "llm.get_available_models"
+  ],
+  "i18n": {
+    "default_locale": "zh-CN",
+    "supported_locales": [
+      "zh-CN"
+    ]
+  },
+  "id": "frierenzk.comfyui-draw-plugin"
+}

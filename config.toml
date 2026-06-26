@@ -1,0 +1,25 @@
+# comfui_draw_plugin - 配置文件
+# 通过 MCP 连接 ComfyUI，使用麦麦工作流生成图片。
+
+[plugin]
+config_version = "1.0.0"
+# 是否启用插件
+enabled = true
+# 是否启用调试日志
+debug_log = false
+
+[comfyui]
+# ComfyUI 服务地址
+host = "127.0.0.1"
+# ComfyUI 服务端口
+port = 8188
+# 工作流文件名
+workflow_file = "麦麦工作流.json"
+
+[llm]
+# 提示词生成使用的模型标识符
+model_name = "deepseek-v4-pro"
+# LLM 温度；常用 0.2~1.0，越高越发散
+temperature = 0.3
+# LLM 响应的最大 token
+max_tokens = 5000
