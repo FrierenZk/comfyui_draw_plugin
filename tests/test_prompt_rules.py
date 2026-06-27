@@ -7,7 +7,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from comfyui_draw_plugin.core.prompt_rules import (
-    PROMPT_GENERATOR_TEMPLATE,
+    CHARACTER_EXTRACTION_TEMPLATE,
+    SCENE_COMPOSITION_TEMPLATE,
+    CHARACTER_DETAIL_TEMPLATE,
     DEFAULT_NEGATIVE_PROMPT,
     QUALITY_TAGS,
     CHARACTER_NEGATIVE_TAGS,
@@ -15,34 +17,34 @@ from comfyui_draw_plugin.core.prompt_rules import (
     CHARACTER_KEYWORDS,
     is_character_prompt,
     get_default_negative_prompt,
-    build_prompt_generator_template,
 )
 
 
 # ==================== 模板测试 ====================
 
 
-def test_prompt_generator_template_contains_user_request_placeholder() -> None:
-    """模板应包含 <<USER_REQUEST>> 占位符。"""
-    assert "<<USER_REQUEST>>" in PROMPT_GENERATOR_TEMPLATE
+def test_character_extraction_template_contains_placeholder() -> None:
+    """Stage1 模板应包含 <<USER_REQUEST>> 占位符。"""
+    assert "<<USER_REQUEST>>" in CHARACTER_EXTRACTION_TEMPLATE
 
 
-def test_prompt_generator_template_contains_role() -> None:
-    """模板应包含角色定义。"""
-    assert "你是 Stable Diffusion 提示词专家" in PROMPT_GENERATOR_TEMPLATE
+def test_scene_composition_template_contains_placeholders() -> None:
+    """Stage2 模板应包含占位符。"""
+    assert "<<USER_REQUEST>>" in SCENE_COMPOSITION_TEMPLATE
+    assert "<<CHARACTER_CONSTRAINT>>" in SCENE_COMPOSITION_TEMPLATE
 
 
-def test_prompt_generator_template_contains_output_format() -> None:
-    """模板应包含输出格式说明。"""
-    assert '"positive"' in PROMPT_GENERATOR_TEMPLATE
-    assert '"negative"' in PROMPT_GENERATOR_TEMPLATE
+def test_character_detail_template_contains_placeholders() -> None:
+    """Stage3 模板应包含占位符。"""
+    assert "<<CHARACTER_LIST>>" in CHARACTER_DETAIL_TEMPLATE
+    assert "<<USER_MENTIONED>>" in CHARACTER_DETAIL_TEMPLATE
 
 
-def test_build_prompt_generator_template_returns_non_empty() -> None:
-    """构建函数应返回非空字符串。"""
-    template = build_prompt_generator_template()
-    assert len(template) > 0
-    assert "<<USER_REQUEST>>" in template
+def test_stage_templates_are_non_empty() -> None:
+    """三个阶段的模板均非空。"""
+    assert len(CHARACTER_EXTRACTION_TEMPLATE) > 0
+    assert len(SCENE_COMPOSITION_TEMPLATE) > 0
+    assert len(CHARACTER_DETAIL_TEMPLATE) > 0
 
 
 # ==================== 默认提示词测试 ====================
@@ -52,15 +54,16 @@ def test_quality_tags_contains_required_tags() -> None:
     """质量词应包含必要的标签。"""
     assert "masterpiece" in QUALITY_TAGS
     assert "best quality" in QUALITY_TAGS
-    assert "ultra-detailed" in QUALITY_TAGS
+    assert "absurdres" in QUALITY_TAGS
+    assert "newest" in QUALITY_TAGS
 
 
 def test_default_negative_prompt_contains_basic_tags() -> None:
     """默认负面提示词应包含基础标签。"""
-    assert "low quality" in DEFAULT_NEGATIVE_PROMPT
+    assert "worst quality" in DEFAULT_NEGATIVE_PROMPT
     assert "blurry" in DEFAULT_NEGATIVE_PROMPT
     assert "deformed" in DEFAULT_NEGATIVE_PROMPT
-    assert "ugly" in DEFAULT_NEGATIVE_PROMPT
+    assert "nsfw" in DEFAULT_NEGATIVE_PROMPT
 
 
 # ==================== 人物类关键词检测测试 ====================
@@ -157,9 +160,9 @@ def test_character_negative_tags_contain_anatomy_tags() -> None:
 def test_character_negative_tags_contain_face_tags() -> None:
     """人物类负面标签应包含面部相关标签。"""
     assert "bad face" in CHARACTER_NEGATIVE_TAGS
-    assert "asymmetrical face" in CHARACTER_NEGATIVE_TAGS
-    assert "deformed face" in CHARACTER_NEGATIVE_TAGS
-    assert "bad eyes" in CHARACTER_NEGATIVE_TAGS
+    assert "poorly drawn face" in CHARACTER_NEGATIVE_TAGS
+    assert "fused face" in CHARACTER_NEGATIVE_TAGS
+    assert "cross-eyed" in CHARACTER_NEGATIVE_TAGS
 
 
 # ==================== 关键词列表测试 ====================

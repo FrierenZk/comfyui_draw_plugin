@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""测试 sdk_runtime 模块的纯函数。"""
+"""测试 sdk_runtime 和 core.generation 模块的纯函数。"""
 
 import sys
 import types
@@ -36,11 +36,18 @@ def _create_mock_plugin(**config_kwargs):
         warning=lambda *args: None,
     )
     ctx = types.SimpleNamespace(logger=logger)
-    
+
     def get_config_value(section, key, default=None):
         return config_kwargs.get(f"{section}.{key}", default)
-    
+
     return types.SimpleNamespace(ctx=ctx, get_config_value=get_config_value)
+
+
+def _get_generator():
+    """获取 ComfyUIDrawGenerator 实例用于测试。"""
+    plugin = _create_mock_plugin()
+    invocation = ComfyUIDrawInvocation(plugin)
+    return invocation._generator
 
 
 # ==================== _parse_llm_response 测试 ====================
@@ -48,13 +55,12 @@ def _create_mock_plugin(**config_kwargs):
 
 def test_parse_llm_response_positive_negative_format() -> None:
     """应正确解析 JSON 数组格式。"""
-    plugin = _create_mock_plugin()
-    invocation = ComfyUIDrawInvocation(plugin)
-    
+    gen = _get_generator()
+
     response = '{"positive": ["masterpiece", "best quality", "1girl", "smile"], "negative": ["low quality", "blurry", "deformed"]}'
-    
-    positive, negative = invocation._parse_llm_response(response)
-    
+
+    positive, negative = gen._parse_llm_response(response)
+
     assert "masterpiece" in positive
     assert "1girl" in positive
     assert "low quality" in negative
@@ -63,13 +69,12 @@ def test_parse_llm_response_positive_negative_format() -> None:
 
 def test_parse_llm_response_json_string_format() -> None:
     """应兼容 JSON 字符串格式。"""
-    plugin = _create_mock_plugin()
-    invocation = ComfyUIDrawInvocation(plugin)
-    
+    gen = _get_generator()
+
     response = '{"positive": "masterpiece, best quality, 1girl", "negative": "low quality, blurry"}'
-    
-    positive, negative = invocation._parse_llm_response(response)
-    
+
+    positive, negative = gen._parse_llm_response(response)
+
     assert "masterpiece" in positive
     assert "1girl" in positive
     assert "low quality" in negative
@@ -77,13 +82,12 @@ def test_parse_llm_response_json_string_format() -> None:
 
 def test_parse_llm_response_legacy_format() -> None:
     """应兼容旧的 POSITIVE/NEGATIVE 格式。"""
-    plugin = _create_mock_plugin()
-    invocation = ComfyUIDrawInvocation(plugin)
-    
+    gen = _get_generator()
+
     response = "POSITIVE: masterpiece, best quality, 1girl, smile\nNEGATIVE: low quality, blurry, deformed"
-    
-    positive, negative = invocation._parse_llm_response(response)
-    
+
+    positive, negative = gen._parse_llm_response(response)
+
     assert "masterpiece" in positive
     assert "1girl" in positive
     assert "low quality" in negative
@@ -92,13 +96,12 @@ def test_parse_llm_response_legacy_format() -> None:
 
 def test_parse_llm_response_fallback_to_lines() -> None:
     """无格式时应回退到按行解析。"""
-    plugin = _create_mock_plugin()
-    invocation = ComfyUIDrawInvocation(plugin)
-    
+    gen = _get_generator()
+
     response = "masterpiece, best quality, 1girl, smile\nlow quality, blurry, deformed"
-    
-    positive, negative = invocation._parse_llm_response(response)
-    
+
+    positive, negative = gen._parse_llm_response(response)
+
     assert "masterpiece" in positive
     assert "low quality" in negative
 

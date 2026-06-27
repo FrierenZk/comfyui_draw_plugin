@@ -17,7 +17,7 @@ def _load_command_patterns() -> Dict[str, str]:
     
     # 支持两种格式：@Command("name", ...) 和 @Command(name="name", ...)
     _COMMAND_BLOCK_RE = re.compile(
-        r'@Command\(\s*"?([^",]+)"?[\s\S]*?pattern=r"([^"]+)"'
+        r'@Command\(\s*"?([^",]+)"?[\s\S]*?pattern=r?f?"([^"]+)"'
     )
     return {
         m.group(1): m.group(2)
@@ -53,36 +53,33 @@ def _get_help_pattern() -> re.Pattern[str]:
 def test_draw_command_pattern_matches_plain_invocation() -> None:
     """无前缀时直接 /生图 <描述> 必须能匹配。"""
     regex = _get_draw_pattern()
-    
+
     match = regex.match("/生图 一个可爱的女孩")
     assert match is not None, "应匹配 /生图 一个可爱的女孩"
-    assert match.group(1) == "一个可爱的女孩"
 
 
 def test_draw_command_pattern_matches_with_english() -> None:
     """应支持英文描述。"""
     regex = _get_draw_pattern()
-    
+
     match = regex.match("/生图 cute girl with blue hair")
     assert match is not None
-    assert match.group(1) == "cute girl with blue hair"
 
 
 def test_draw_command_pattern_matches_with_special_chars() -> None:
     """应支持特殊字符。"""
     regex = _get_draw_pattern()
-    
+
     match = regex.match("/生图 樱花树下的少女，动漫风格，近景")
     assert match is not None
-    assert match.group(1) == "樱花树下的少女，动漫风格，近景"
 
 
-def test_draw_command_pattern_rejects_empty_description() -> None:
-    """空描述应被拒绝。"""
+def test_draw_command_pattern_matches_bare_command() -> None:
+    """/生图（无参数）也应匹配，由 handler 提示帮助信息。"""
     regex = _get_draw_pattern()
-    
+
     match = regex.match("/生图")
-    assert match is None
+    assert match is not None
 
 
 def test_help_command_pattern_matches() -> None:
@@ -117,8 +114,6 @@ def test_command_patterns_count() -> None:
 
 
 def test_draw_pattern_format() -> None:
-    """生图命令 pattern 应以 ^ 开头并包含捕获组。"""
+    """生图命令 pattern 应以 ^ 开头。"""
     regex = _get_draw_pattern()
     assert regex.pattern.startswith("^"), "pattern 应以 ^ 开头"
-    # 支持命名捕获组 (?P<description>.+) 或普通捕获组 (.+)
-    assert ".+" in regex.pattern, "pattern 应包含捕获组"

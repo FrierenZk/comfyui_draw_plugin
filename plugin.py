@@ -7,13 +7,33 @@ from maibot_sdk import MaiBotPlugin, PluginConfigBase, Field, Command
 from .sdk_runtime import ComfyUIDrawInvocation
 
 
+# ==================== 命令名常量（模块导入时从 config.toml 读取，与 PluginSection.command_name 默认值一致） ====================
+
+def _get_command_name() -> str:
+    import os as _os
+    _path = _os.path.join(_os.path.dirname(__file__), "config.toml")
+    try:
+        with open(_path, "r", encoding="utf-8") as _f:
+            for _line in _f:
+                _m = re.match(r'^\s*command_name\s*=\s*"(.+)"', _line)
+                if _m:
+                    return _m.group(1)
+    except Exception:
+        pass
+    return "生图"
+
+
+COMMAND_NAME = _get_command_name()
+
+
 # ==================== 配置模型 ====================
 
 class PluginSection(PluginConfigBase):
     """插件基础配置"""
     __ui_label__ = "基础设置"
 
-    config_version: str = Field(default="1.0.1", description="配置版本号")
+    config_version: str = Field(default="1.0.2", description="配置版本号")
+    command_name: str = Field(default=COMMAND_NAME, description="触发命令名（修改后需重启插件）")
     enabled: bool = Field(default=True, description="是否启用插件")
     debug_log: bool = Field(default=False, description="是否启用调试日志")
 
@@ -41,8 +61,10 @@ class LLMSection(PluginConfigBase):
     __ui_label__ = "LLM 设置"
 
     model_name: str = Field(default="deepseek-v4-pro", description="提示词生成使用的模型标识符")
-    temperature: float = Field(default=0.3, description="LLM 温度；常用 0.2~1.0，越高越发散")
-    max_tokens: int = Field(default=5000, description="LLM 响应的最大 token")
+    temperature: float = Field(default=0.3, description="LLM 温度；常用 0.2~1.0，越高越发散。角色名提取阶段固定使用 0.1")
+    max_tokens_char_extract: int = Field(default=200, description="Stage1 角色名提取最大 token")
+    max_tokens_scene: int = Field(default=2000, description="Stage2 场景构图最大 token")
+    max_tokens_char_detail: int = Field(default=600, description="Stage3 角色细节补充最大 token")
 
 
 class ComfyUIDrawPluginConfig(PluginConfigBase):
@@ -69,7 +91,10 @@ class ComfyUIDrawPlugin(MaiBotPlugin):
     async def on_load(self) -> None:
         """插件加载时初始化"""
         self.invocation = ComfyUIDrawInvocation(self)
-        self.ctx.logger.info("ComfyUI 麦麦工作流绘图插件已加载")
+        cmd = self._get_cmd()
+        self.ctx.logger.info(
+            f"ComfyUI 麦麦工作流绘图插件已加载, command_name=/{cmd}"
+        )
 
     async def on_unload(self) -> None:
         """插件卸载时清理"""
@@ -91,24 +116,30 @@ class ComfyUIDrawPlugin(MaiBotPlugin):
         raw = self.get_plugin_config_data()
         return raw.get(section, {}).get(key, default)
 
+    def _get_cmd(self) -> str:
+        """获取当前配置的命令名"""
+        return self.get_config_value("plugin", "command_name", COMMAND_NAME)
+
     # ==================== Command ====================
 
     @Command(
-        "生图",
+        COMMAND_NAME,
         description="使用 ComfyUI 麦麦工作流生成图片",
-        pattern=r"^/生图(?=\s|$)"
+        pattern=rf"^/{COMMAND_NAME}(?=\s|$)"
     )
     async def handle_draw_command(self, **kwargs):
         """处理 /生图 命令"""
+        cmd = self._get_cmd()
         stream_id = kwargs.get("stream_id", "")
         text = kwargs.get("text", "").strip()
-        
+
         content = text
-        if content.startswith("/生图"):
-            content = content[3:].strip()
+        prefix = f"/{cmd}"
+        if content.startswith(prefix):
+            content = content[len(prefix):].strip()
 
         if not content:
-            await self.ctx.send.text("请提供描述，例如：/生图 一个可爱的女孩", stream_id)
+            await self.ctx.send.text(f"请提供描述，例如：/{cmd} 一个可爱的女孩", stream_id)
             return False, "缺少描述", 1
 
         if not self.invocation:
@@ -131,7 +162,8 @@ class ComfyUIDrawPlugin(MaiBotPlugin):
             else:
                 await invocation.generate_image(stream_id, positive)
         except Exception as e:
-            self.ctx.logger.error(f"[生图] task 异常: {e}")
+            cmd = self._get_cmd()
+            self.ctx.logger.error(f"[{cmd}] task 异常: {e}")
 
     def _parse_direct_prompts(self, content: str) -> tuple:
         """解析 -p 或 /p 正面 -n 或 /n 负面 格式"""
@@ -144,24 +176,25 @@ class ComfyUIDrawPlugin(MaiBotPlugin):
         return None, None
 
     @Command(
-        "生图帮助",
+        f"{COMMAND_NAME}帮助",
         description="显示生图插件帮助",
-        pattern=r"^/生图帮助$"
+        pattern=rf"^/{COMMAND_NAME}帮助$"
     )
     async def handle_help_command(self, **kwargs):
         """处理 /生图帮助 命令"""
+        cmd = self._get_cmd()
         stream_id = kwargs.get("stream_id", "")
         help_text = (
             "ComfyUI 麦麦工作流绘图插件\n"
             "━━━━━━━━━━━━━━━━━━━━━━\n"
             "命令：\n"
-            "  /生图 <描述> - LLM 解析后生成图片\n"
-            "  /生图 -p <正面> -n <负面> - 直接使用提示词\n"
-            "  /生图帮助 - 显示此帮助\n"
+            f"  /{cmd} <描述> - LLM 解析后生成图片\n"
+            f"  /{cmd} -p <正面> -n <负面> - 直接使用提示词\n"
+            f"  /{cmd}帮助 - 显示此帮助\n"
             "\n"
             "示例：\n"
-            "  /生图 一个可爱的女孩，蓝色头发\n"
-            "  /生图 -p 1girl, blue hair -n low quality\n"
+            f"  /{cmd} 一个可爱的女孩，蓝色头发\n"
+            f"  /{cmd} -p 1girl, blue hair -n low quality\n"
         )
         await self.ctx.send.text(help_text, stream_id)
         return True, "帮助信息已发送", 1

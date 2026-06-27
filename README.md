@@ -25,7 +25,8 @@
 
 ```toml
 [plugin]
-config_version = "1.0.1"
+config_version = "1.0.2"
+command_name = "生图"  # 触发命令名（修改后需重启插件）
 enabled = true
 debug_log = false  # 调试日志开关
 
