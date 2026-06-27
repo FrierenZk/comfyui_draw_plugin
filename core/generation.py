@@ -14,6 +14,7 @@ from .prompt_rules import (
     CHARACTER_FEATURE_TEMPLATE,
     CHARACTER_DETAIL_TEMPLATE,
     APPEARANCE_ANALYSIS_TEMPLATE,
+    WORKFLOW_ANALYSIS_TEMPLATE,
     DEFAULT_NEGATIVE_PROMPT,
     CHARACTER_DETAIL_TAGS,
     CHARACTER_NEGATIVE_TAGS,
@@ -73,6 +74,11 @@ class ComfyUIDrawGenerator:
     def __init__(self, invocation: "ComfyUIDrawInvocation") -> None:
         self.inv = invocation
         self.logger = invocation.logger
+        self._node_cache: dict[str, dict[str, str]] = {}
+        self._node_cache_path = os.path.join(
+            os.path.dirname(__file__), "..", "cache", "workflow_nodes.json"
+        )
+        self._load_node_cache()
 
     # ── 公开入口 ──────────────────────────────────────────
 
@@ -190,8 +196,90 @@ class ComfyUIDrawGenerator:
         self.inv._debug_log(f"获取工作流成功，节点数: {len(workflow)}")
         return workflow
 
+    # ── 工作流节点缓存 ────────────────────────────────────
+
+    def _load_node_cache(self) -> None:
+        try:
+            if os.path.exists(self._node_cache_path):
+                with open(self._node_cache_path, "r", encoding="utf-8") as f:
+                    self._node_cache = json.load(f)
+        except Exception:
+            self._node_cache = {}
+
+    def _save_node_cache(self) -> None:
+        try:
+            os.makedirs(os.path.dirname(self._node_cache_path), exist_ok=True)
+            with open(self._node_cache_path, "w", encoding="utf-8") as f:
+                json.dump(self._node_cache, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    async def _resolve_prompt_nodes(
+        self, workflow: dict, workflow_file: str, task_name: str
+    ) -> tuple[str | None, str | None]:
+        """解析工作流正/负面提示词节点 ID（代码→缓存→LLM 三级回退）。"""
+        # 1. 代码检测
+        pos_id, neg_id = self.inv._detect_prompt_nodes_by_code(workflow)
+        if pos_id and neg_id:
+            self._node_cache[workflow_file] = {"positive_node": pos_id, "negative_node": neg_id}
+            self._save_node_cache()
+            return pos_id, neg_id
+
+        # 2. 缓存命中
+        if workflow_file in self._node_cache:
+            entry = self._node_cache[workflow_file]
+            self.inv._debug_log(f"工作流节点缓存命中: {workflow_file}")
+            return entry.get("positive_node"), entry.get("negative_node")
+
+        # 3. LLM 分析
+        if not task_name:
+            self.inv._debug_log("无可用 LLM，跳过工作流分析")
+            return None, None
+
+        self.inv._debug_log(f"代码未识别节点，尝试 LLM 分析工作流: {workflow_file}")
+        try:
+            prompt = WORKFLOW_ANALYSIS_TEMPLATE.replace(
+                "<<WORKFLOW_JSON>>", json.dumps(workflow, ensure_ascii=False)[:8000]
+            )
+            result = await llm_service.generate(
+                llm_service.LLMServiceRequest(
+                    task_name=task_name,
+                    request_type="comfyui_draw_plugin.workflow_analyzer",
+                    prompt=prompt,
+                    temperature=0.1,
+                    max_tokens=200,
+                )
+            )
+            if result.success and result.completion.response:
+                resp = result.completion.response.strip()
+                if resp.startswith("```"):
+                    lines = resp.split("\n")
+                    resp = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+                data = json.loads(resp)
+                pos_id = data.get("positive_node")
+                neg_id = data.get("negative_node")
+                if pos_id and neg_id:
+                    self._node_cache[workflow_file] = {"positive_node": pos_id, "negative_node": neg_id}
+                    self._save_node_cache()
+                    self.inv._debug_log(f"LLM 识别成功: pos={pos_id}, neg={neg_id}")
+                    return pos_id, neg_id
+                else:
+                    self.inv._debug_log("LLM 未能识别提示词节点")
+            else:
+                self.inv._debug_log(f"LLM 工作流分析失败: success={result.success}")
+        except Exception as e:
+            self.logger.warning(f"LLM 工作流分析异常: {e}")
+
+        return None, None
+
     async def _enqueue_job(self, workflow: dict, positive: str, negative: str) -> str:
-        modified = self.inv.modify_workflow(workflow, positive, negative)
+        workflow_file = self.inv._get_config("comfyui", "workflow_file", "麦麦工作流.json")
+        model_name = self.inv._get_config("llm", "model_name", "")
+        task_name = self._resolve_task_name(model_name) or model_name
+        pos_node, neg_node = await self._resolve_prompt_nodes(
+            workflow, workflow_file, task_name
+        )
+        modified = self.inv.modify_workflow(workflow, positive, negative, pos_node, neg_node)
         result = await self.inv.call_tool("enqueue_workflow", {"workflow": modified})
         if not result:
             raise GenerationSubmitError("提交任务失败")
@@ -223,9 +311,13 @@ class ComfyUIDrawGenerator:
         raise GenerationTimeoutError(f"prompt_id={prompt_id}")
 
     async def _retrieve_image(self, prompt_id: str) -> str:
-        history_result = await self.inv.call_tool("get_history", {"prompt_id": prompt_id})
+        # 优先用 list_assets 获取文件名（结构化 JSON，可靠）
+        filename = await self._get_filename_from_assets(prompt_id)
+        # 兜底：get_history 正则提取
+        if not filename:
+            history_result = await self.inv.call_tool("get_history", {"prompt_id": prompt_id})
+            filename = self.inv._extract_filename(history_result)
 
-        filename = self.inv._extract_filename(history_result)
         if not filename:
             raise ImageRetrievalError(f"获取图片文件名失败: prompt_id={prompt_id}")
 
@@ -244,6 +336,20 @@ class ComfyUIDrawGenerator:
             raise ImageRetrievalError(f"解析图片数据失败: filename={filename}")
 
         return image_base64
+
+    async def _get_filename_from_assets(self, prompt_id: str) -> str | None:
+        """从 list_assets 按 prompt_id 查找文件名。"""
+        result = await self.inv.call_tool("list_assets", {"limit": 50})
+        if not result:
+            return None
+        data = self.inv._parse_tool_result(result)
+        if not data:
+            return None
+        assets = data.get("assets", []) if isinstance(data, dict) else []
+        for asset in assets:
+            if asset.get("prompt_id") == prompt_id:
+                return asset.get("filename")
+        return None
 
     # ── 提示词处理 ────────────────────────────────────────
 

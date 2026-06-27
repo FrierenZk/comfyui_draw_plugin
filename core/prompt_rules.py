@@ -218,6 +218,7 @@ _CHARACTER_FEATURE_TEMPLATE = """
 <role>
 你是角色人物特征提取器。
 任务：**根据用户描述生成人物外貌、服装、动作、表情标签**。场景和光影不归你管。
+多人场景：每个角色的特征紧跟该角色引用，形成"角色→特征簇"，不要混在一起。
 </role>
 
 <hard_rules>
@@ -248,9 +249,16 @@ _CHARACTER_FEATURE_TEMPLATE = """
 - 用户描述了表情 → 提取
 - 用户**没提**动作/表情 → **不写**
 
-### 6. 用户完全没描述人物特征
+### 6. 多人场景 — 特征必须绑定到对应角色！
+- 输出标签时，每个角色的特征紧跟该角色的引用标签后面，形成"角色→特征簇"
+- 结构：`[(角色A:1.1), A的外貌, A的服装, A的动作, (角色B:1.1), B的外貌, B的服装, B的动作]`
+- 例："初音未来穿浴衣跳舞，镜音连穿西装挥手"
+  → `["(hatsune miku (vocaloid):1.1)", "yukata", "obi sash", "dancing", "dynamic pose", "smile", "(kagamine len (vocaloid):1.1)", "black suit", "necktie", "waving hand", "looking at viewer"]`
+- **不要把不同角色的特征混在一起**
+
+### 7. 用户完全没描述人物特征
 - 只输出角色引用标签和基本人数标签
-- 例："初音未来" → `["(hatsune miku (vocaloid):1.1)", "1girl", "solo"]`
+- 例："初音未来和镜音连" → `["(hatsune miku (vocaloid):1.1)", "1girl", "(kagamine len (vocaloid):1.1)", "1boy"]`
 - negative 始终输出标准负面标签</hard_rules>
 
 <output_format>
@@ -405,6 +413,38 @@ _APPEARANCE_ANALYSIS_TEMPLATE = """
 """.strip()
 
 APPEARANCE_ANALYSIS_TEMPLATE = _APPEARANCE_ANALYSIS_TEMPLATE
+
+
+# ==================== 工作流节点分析模板 (temp=0.1) ====================
+
+_WORKFLOW_ANALYSIS_TEMPLATE = """
+<role>
+分析 ComfyUI 工作流 JSON，找到正/负面提示词的 CLIPTextEncode 节点 ID。
+</role>
+
+<rules>
+- 找到采样器节点（KSampler、KSamplerAdvanced、SamplerCustom 等），其 inputs.positive / inputs.negative 引用的节点就是正/负面 CLIPTextEncode
+- 如果没有标准采样器，追溯节点连接链路：
+  1. 找到 class_type 包含 "Sampler" 或 "Sample" 的节点
+  2. 看它的 inputs 中引用了哪些节点 → 继续追溯这些节点 → 最终找到 CLIPTextEncode
+  3. "positive" 或 "cond" 输入端 → 正面；"negative" 或 "uncond" 输入端 → 负面
+- 不要根据文本内容判断正负面，根据连接拓扑判断
+- 返回节点 ID 字符串
+</rules>
+
+<output_format>
+{"positive_node": "6", "negative_node": "7"}
+如果找不到对应节点，对应值返回 null
+</output_format>
+
+<workflow>
+<<WORKFLOW_JSON>>
+</workflow>
+
+分析上述工作流，找出正/负面提示词的 CLIPTextEncode 节点 ID。仅输出 JSON。
+""".strip()
+
+WORKFLOW_ANALYSIS_TEMPLATE = _WORKFLOW_ANALYSIS_TEMPLATE
 
 
 # ==================== 默认提示词 ====================

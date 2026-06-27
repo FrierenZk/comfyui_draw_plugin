@@ -172,27 +172,50 @@ class ComfyUIDrawInvocation:
 
     # ── 工作流修改 ──────────────────────────────────────────
 
-    def modify_workflow(
-        self, workflow: dict, positive_prompt: str, negative_prompt: str
-    ) -> dict:
-        """修改工作流中的提示词"""
+    def _detect_prompt_nodes_by_code(self, workflow: dict) -> tuple[str | None, str | None]:
+        """通过 KSampler 连接关系检测正/负面 CLIPTextEncode 节点 ID。"""
+        pos_node = neg_node = None
         for node_id, node in workflow.items():
-            class_type = node.get("class_type", "")
-            if class_type == "CLIPTextEncode":
-                for ksampler_id, ksampler in workflow.items():
-                    if ksampler.get("class_type") == "KSampler":
-                        inputs = ksampler.get("inputs", {})
-                        positive_ref = inputs.get("positive", [])
-                        negative_ref = inputs.get("negative", [])
+            if node.get("class_type") == "KSampler":
+                inputs = node.get("inputs", {})
+                for key, ref in (("positive", "pos_node"), ("negative", "neg_node")):
+                    ref_list = inputs.get(key, [])
+                    if isinstance(ref_list, list) and ref_list:
+                        node_id_str = str(ref_list[0])
+                        target = workflow.get(node_id_str, {})
+                        if target.get("class_type") == "CLIPTextEncode":
+                            if key == "positive":
+                                pos_node = node_id_str
+                            else:
+                                neg_node = node_id_str
+        return pos_node, neg_node
 
-                        if isinstance(positive_ref, list) and len(positive_ref) > 0:
-                            if str(positive_ref[0]) == node_id:
-                                node["inputs"]["text"] = positive_prompt
+    def modify_workflow(
+        self,
+        workflow: dict,
+        positive_prompt: str,
+        negative_prompt: str,
+        positive_node: str | None = None,
+        negative_node: str | None = None,
+    ) -> dict:
+        """修改工作流中的提示词。传入 node ID 则直接注入；否则自动检测 KSampler 连接。"""
+        if positive_node:
+            node = workflow.get(positive_node)
+            if node and node.get("class_type") == "CLIPTextEncode":
+                node["inputs"]["text"] = positive_prompt
+        if negative_node:
+            node = workflow.get(negative_node)
+            if node and node.get("class_type") == "CLIPTextEncode":
+                node["inputs"]["text"] = negative_prompt
+        if positive_node or negative_node:
+            return workflow
 
-                        if isinstance(negative_ref, list) and len(negative_ref) > 0:
-                            if str(negative_ref[0]) == node_id:
-                                node["inputs"]["text"] = negative_prompt
-
+        # 回退：自动检测（兼容旧逻辑）
+        pos_node, neg_node = self._detect_prompt_nodes_by_code(workflow)
+        if pos_node:
+            workflow[pos_node]["inputs"]["text"] = positive_prompt
+        if neg_node:
+            workflow[neg_node]["inputs"]["text"] = negative_prompt
         return workflow
 
     # ── 提示词工具 ──────────────────────────────────────────
