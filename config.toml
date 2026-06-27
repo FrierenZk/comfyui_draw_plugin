@@ -24,11 +24,11 @@ model_name = "deepseek-v4-pro"
 # LLM 温度；常用 0.2~1.0，越高越发散。Stage1/3 固定使用 0.1/0.15
 temperature = 0.3
 # Stage1 角色名提取最大 token
-max_tokens_char_extract = 1500
-# Stage2 场景构图最大 token
-max_tokens_scene = 2500
+max_tokens_char_extract = 2000
+# Stage2 场景构图/人物特征最大 token
+max_tokens_scene = 5000
 # Stage3 角色细节补充最大 token
-max_tokens_char_detail = 4000
+max_tokens_char_detail = 5000
 # ---- Anthropic SDK 直连 ----
 use_anthropic_api = false
 anthropic_api_key = ""

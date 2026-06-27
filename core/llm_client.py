@@ -92,16 +92,15 @@ class LLMClientMixin:
                 pass  # fall through to old API
             else:
                 try:
-                    tools = [{"type": "web_search_20260209", "name": "web_search"}] if with_search else None
+                    tools_arg = [{"type": "web_search_20260209", "name": "web_search"}] if with_search else None
                     client = AsyncAnthropic(api_key=api_key, base_url=base_url)
                     t0 = time.monotonic()
-                    response = await client.messages.create(
-                        model=model,
-                        max_tokens=max_tokens,
-                        messages=[{"role": "user", "content": prompt}],
-                        tools=tools,
-                        system="Output ONLY the requested JSON format, no markdown, no explanations.",
-                    )
+                    kwargs = dict(model=model, max_tokens=max_tokens,
+                                  messages=[{"role": "user", "content": prompt}],
+                                  system="Output ONLY the requested JSON format, no markdown, no explanations.")
+                    if tools_arg:
+                        kwargs["tools"] = tools_arg
+                    response = await client.messages.create(**kwargs)
                     await client.close()
 
                     elapsed = time.monotonic() - t0
@@ -236,8 +235,10 @@ class LLMClientMixin:
             new_ttl = self._CACHE_TIERS[min(old_tier + 1, 3)] if similar else 3
             self.inv._debug_log(f"缓存升级: {entry.get('ttl')}→{new_ttl}天 ({'相似' if similar else '变化'})")
 
-        cache[cache_key] = {"data": result, "ts": now, "ttl": new_ttl}
-        self._save_json_cache(cache_file, cache)
+        # 仅 Anthropic 路径（有 web_search）才写缓存，旧 API 不准
+        if self.inv._get_config("llm", "use_anthropic_api", False):
+            cache[cache_key] = {"data": result, "ts": now, "ttl": new_ttl}
+            self._save_json_cache(cache_file, cache)
         return result
 
     async def _judge_similarity(self, task_name: str, old: str, new: str) -> bool:

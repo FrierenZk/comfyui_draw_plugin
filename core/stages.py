@@ -50,9 +50,9 @@ class StagesMixin:
         try:
             model_name = self.inv._get_config("llm", "model_name", "")
             temperature = self.inv._get_config("llm", "temperature", 0.3)
-            s1_max_tokens = self.inv._get_config("llm", "max_tokens_char_extract", 1500)
-            s2_max_tokens = self.inv._get_config("llm", "max_tokens_scene", 2500)
-            s3_max_tokens = self.inv._get_config("llm", "max_tokens_char_detail", 4000)
+            s1_max_tokens = self.inv._get_config("llm", "max_tokens_char_extract", 2000)
+            s2_max_tokens = self.inv._get_config("llm", "max_tokens_scene", 5000)
+            s3_max_tokens = self.inv._get_config("llm", "max_tokens_char_detail", 5000)
 
             task_name = self._resolve_task_name(model_name)
 
@@ -314,7 +314,7 @@ class StagesMixin:
             "不要添加质量/解剖/水印类标签（已有）。无必要则输出 {\"negative\": []}"
         )
         success, resp = await self._llm_generate(
-            task_name=task_name, prompt=prompt, temperature=0.2, max_tokens=300, with_search=False
+            task_name=task_name, prompt=prompt, temperature=0.2, max_tokens=500, with_search=False
         )
         if not success or not resp:
             return []
@@ -360,8 +360,10 @@ class StagesMixin:
                 overlap = len(set(tags) & old_set) / max(len(set(tags) | old_set), 1)
                 old_tier = self._TAGS_CACHE_TIERS.index(entry.get("ttl", 3))
                 new_ttl = self._TAGS_CACHE_TIERS[min(old_tier + 1, 3)] if overlap > 0.5 else 3
-            tags_cache[cache_key] = {"data": tags, "ts": now, "ttl": new_ttl}
-            self._save_json_cache(self._TAGS_CACHE_FILE, tags_cache)
+            # 仅 Anthropic 路径（有 web_search）才写标签缓存，旧 API 不准
+            if self.inv._get_config("llm", "use_anthropic_api", False):
+                tags_cache[cache_key] = {"data": tags, "ts": now, "ttl": new_ttl}
+                self._save_json_cache(self._TAGS_CACHE_FILE, tags_cache)
         return tags
 
     def _finalize_prompts(self, pos_list: list[str], neg_list: list[str]) -> tuple[str, str]:

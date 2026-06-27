@@ -62,9 +62,9 @@ class LLMSection(PluginConfigBase):
 
     model_name: str = Field(default="deepseek-v4-pro", description="模型标识符（Anthropic 直连时用作 model ID）")
     temperature: float = Field(default=0.3, description="LLM 温度；常用 0.2~1.0，越高越发散")
-    max_tokens_char_extract: int = Field(default=1500, description="Stage1 角色名提取最大 token")
-    max_tokens_scene: int = Field(default=2500, description="Stage2 场景构图最大 token")
-    max_tokens_char_detail: int = Field(default=4000, description="Stage3 角色细节补充最大 token")
+    max_tokens_char_extract: int = Field(default=2000, description="Stage1 角色名提取最大 token")
+    max_tokens_scene: int = Field(default=5000, description="Stage2 场景构图/人物特征最大 token")
+    max_tokens_char_detail: int = Field(default=5000, description="Stage3 角色细节补充最大 token")
     # Anthropic SDK 直连
     use_anthropic_api: bool = Field(default=False, description="启用 Anthropic SDK 直连", json_schema_extra={"x-widget": "switch"})
     anthropic_api_key: str = Field(default="", description="Anthropic API Key（留空则读 ANTHROPIC_API_KEY 环境变量）", json_schema_extra={"x-widget": "password"})
