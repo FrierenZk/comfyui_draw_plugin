@@ -32,7 +32,7 @@ class PluginSection(PluginConfigBase):
     """插件基础配置"""
     __ui_label__ = "基础设置"
 
-    config_version: str = Field(default="1.0.2", description="配置版本号")
+    config_version: str = Field(default="1.1.0", description="配置版本号")
     command_name: str = Field(default=COMMAND_NAME, description="触发命令名（修改后需重启插件）")
     enabled: bool = Field(default=True, description="是否启用插件")
     debug_log: bool = Field(default=False, description="是否启用调试日志")
@@ -60,11 +60,16 @@ class LLMSection(PluginConfigBase):
     """LLM 配置"""
     __ui_label__ = "LLM 设置"
 
-    model_name: str = Field(default="deepseek-v4-pro", description="提示词生成使用的模型标识符")
-    temperature: float = Field(default=0.3, description="LLM 温度；常用 0.2~1.0，越高越发散。角色名提取阶段固定使用 0.1")
-    max_tokens_char_extract: int = Field(default=200, description="Stage1 角色名提取最大 token")
-    max_tokens_scene: int = Field(default=2000, description="Stage2 场景构图最大 token")
-    max_tokens_char_detail: int = Field(default=600, description="Stage3 角色细节补充最大 token")
+    model_name: str = Field(default="deepseek-v4-pro", description="模型标识符（Anthropic 直连时用作 model ID）")
+    temperature: float = Field(default=0.3, description="LLM 温度；常用 0.2~1.0，越高越发散")
+    max_tokens_char_extract: int = Field(default=1500, description="Stage1 角色名提取最大 token")
+    max_tokens_scene: int = Field(default=2500, description="Stage2 场景构图最大 token")
+    max_tokens_char_detail: int = Field(default=4000, description="Stage3 角色细节补充最大 token")
+    # Anthropic SDK 直连
+    use_anthropic_api: bool = Field(default=False, description="启用 Anthropic SDK 直连", json_schema_extra={"x-widget": "switch"})
+    anthropic_api_key: str = Field(default="", description="Anthropic API Key（留空则读 ANTHROPIC_API_KEY 环境变量）", json_schema_extra={"x-widget": "password"})
+    anthropic_base_url: str = Field(default="https://api.deepseek.com/anthropic", description="Anthropic API 端点")
+    anthropic_env: list[str] = Field(default_factory=list, description="Anthropic 额外环境变量，格式 KEY=VALUE")
 
 
 class ComfyUIDrawPluginConfig(PluginConfigBase):

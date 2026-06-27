@@ -35,7 +35,7 @@ _HARD_RULES = """
 
 **已知二次元角色**
 - `<character_constraint>` 中列出的角色已预先确认，**直接使用，不可更改、不可替换、不可混淆**
-- 写法：`(character_name (series):1.1)`，适当加权
+- 写法：`(character_name (series):1.05)`，适当加权
 - 自动补充与用户描述不冲突的角色特征（发色、发型、服装等）
 - 如果用户明确指定了外貌（如"蓝发"），则以用户描述为准
 
@@ -88,10 +88,10 @@ _EXAMPLES = """
 输出：{"positive": ["masterpiece", "best quality", "highly detailed", "ultra-detailed", "8k", "solo", "1girl", "long blue hair", "smile", "cute", "beautiful face", "detailed eyes", "school uniform", "white shirt", "blue skirt", "cherry blossoms", "soft lighting", "depth of field", "anime style"], "negative": ["low quality", "blurry", "distorted", "deformed", "ugly", "bad anatomy", "disfigured", "poorly drawn face", "mutation", "mutated", "extra limbs", "extra fingers", "watermark", "text", "signature", "nsfw"]}
 
 输入：画初音未来
-输出：{"positive": ["masterpiece", "best quality", "highly detailed", "ultra-detailed", "8k", "solo", "1girl", "(hatsune miku (vocaloid):1.1)", "standing", "looking at viewer", "gentle smile", "detailed eyes", "twin tails", "aqua hair", "detached sleeves", "thighhighs", "necktie"], "negative": ["low quality", "blurry", "distorted", "deformed", "ugly", "bad anatomy", "disfigured", "poorly drawn face", "mutation", "mutated", "extra limbs", "extra fingers", "watermark", "text", "signature", "nsfw"]}
+输出：{"positive": ["masterpiece", "best quality", "highly detailed", "ultra-detailed", "8k", "solo", "1girl", "(hatsune miku (vocaloid):1.05)", "standing", "looking at viewer", "gentle smile", "detailed eyes", "twin tails", "aqua hair", "detached sleeves", "thighhighs", "necktie"], "negative": ["low quality", "blurry", "distorted", "deformed", "ugly", "bad anatomy", "disfigured", "poorly drawn face", "mutation", "mutated", "extra limbs", "extra fingers", "watermark", "text", "signature", "nsfw"]}
 
 输入：画恰斯卡
-输出：{"positive": ["masterpiece", "best quality", "highly detailed", "ultra-detailed", "8k", "solo", "1girl", "(chasca (genshin impact):1.1)", "standing", "looking at viewer", "confident smile", "detailed eyes", "long brown hair", "feathered hat", "coat", "gloves", "outdoors", "anime style"], "negative": ["low quality", "blurry", "distorted", "deformed", "ugly", "bad anatomy", "disfigured", "poorly drawn face", "mutation", "mutated", "extra limbs", "extra fingers", "watermark", "text", "signature", "nsfw"]}
+输出：{"positive": ["masterpiece", "best quality", "highly detailed", "ultra-detailed", "8k", "solo", "1girl", "(chasca (genshin impact):1.05)", "standing", "looking at viewer", "confident smile", "detailed eyes", "long brown hair", "feathered hat", "coat", "gloves", "outdoors", "anime style"], "negative": ["low quality", "blurry", "distorted", "deformed", "ugly", "bad anatomy", "disfigured", "poorly drawn face", "mutation", "mutated", "extra limbs", "extra fingers", "watermark", "text", "signature", "nsfw"]}
 
 输入：樱花树下的少女，动漫风格，近景
 输出：{"positive": ["masterpiece", "best quality", "highly detailed", "ultra-detailed", "8k", "solo", "1girl", "close-up", "beautiful face", "detailed eyes", "long hair", "cherry blossom tree", "falling petals", "spring", "soft lighting", "warm colors", "anime style", "serene expression"], "negative": ["low quality", "blurry", "distorted", "deformed", "ugly", "bad anatomy", "disfigured", "poorly drawn face", "mutation", "mutated", "extra limbs", "extra fingers", "watermark", "text", "signature", "nsfw"]}
@@ -107,11 +107,13 @@ _CHARACTER_EXTRACTION_TEMPLATE = """
 </role>
 
 <rules>
+- 如有 `<knowledge_reference>`，优先参考其中的角色信息
 - 识别到的已知角色输出为：`character_name (series)`，如 `kamisato ayaka (genshin impact)`
 - 非英文角色名必须翻译为官方英文/Romaji 名（适用所有语言：中文、日文、韩文等）
 - 同姓角色必须核对全名：如"神里绫华"是 `kamisato ayaka`，不是 `kamisato ayato`
 - 未提及任何具体角色时返回空数组
 - **禁止**猜测、替换、发明用户未提及的角色
+- **"A穿B的衣服/服装"** → 只提取 A 为角色，B 只是服装风格参考，不是出场角色
 </rules>
 
 <output_format>
@@ -137,6 +139,10 @@ _CHARACTER_EXTRACTION_TEMPLATE = """
 
 输入：miyabi and soukaku
 输出：{"characters": ["hoshi miyabi (zenless zone zero)", "soukaku (zenless zone zero)"]}
+
+输入：神里绫华穿雷电将军的衣服
+输出：{"characters": ["kamisato ayaka (genshin impact)"]}
+（雷电将军只是服装参考，不是出场角色）
 </examples>
 
 <user_request>
@@ -155,8 +161,9 @@ _SCENE_COMPOSITION_TEMPLATE = """
 <role>
 你是 Stable Diffusion 场景构图专家。
 任务：**只生成场景、构图、光影、氛围、风格标签**。人物特征由后续阶段处理，你不需要添加。
+如有 `<knowledge_reference>`，参考其中的场景/地点信息。
 即使用户没描述场景，也要补基本构图和默认光影。
-构图默认规则：角色为主 → `upper body` 或 `portrait`；场景为主 → `full body` 或 `wide shot`；不确定 → `cowboy shot`。
+构图默认规则：**角色为主禁止 full body/wide shot**，必须用 `cowboy shot` 或更近；场景为主 → `full body`。
 </role>
 
 <hard_rules>
@@ -168,7 +175,7 @@ _SCENE_COMPOSITION_TEMPLATE = """
 错误：`soft, natural, lighting, cherry, blossom, petals, spring, atmosphere, depth, of, field`
 
 ### 2. 角色（仅标记位置，不描写外貌）
-- `<character_constraint>` 中列出的角色直接引用：`(character_name (series):1.1)`
+- `<character_constraint>` 中列出的角色直接引用：`(character_name (series):1.05)`
 - 人数标记：`solo, 1girl` / `solo, 1boy` / `2girls` / `1boy 1girl`
 - **不添加**角色外貌（发色、瞳色、服装等），后续阶段处理
 
@@ -176,8 +183,9 @@ _SCENE_COMPOSITION_TEMPLATE = """
 - 若指示无已知角色，按原创人物处理，简要描述外貌
 
 ### 4. 镜头与构图（重点）
-- 默认景别：角色为主 → `upper body`；场景为主 → `full body`；不确定 → `cowboy shot`
-- 景别选项：`close-up, portrait, head and shoulders` / `upper body` / `cowboy shot` / `full body` / `wide shot`
+- **角色类提示词必须用近景，禁止用 full body 或 wide shot**
+- 默认景别：角色为主 → `cowboy shot`；场景为主 → `full body`；脸部细节多 → `portrait`
+- 景别选项：`portrait, head and shoulders` / `upper body` / `cowboy shot` / `full body` / `wide shot`
 - 视角：`from above, from below, from side, pov, looking at viewer, looking away`
 
 ### 5. 环境与场景（重点）
@@ -226,8 +234,8 @@ _CHARACTER_FEATURE_TEMPLATE = """
 正确：`long blue hair, white sailor uniform, red pleated skirt, gentle smile, waving hand`
 错误：`long, blue, hair, white, sailor, uniform, red, pleated, skirt, gentle, smile, waving, hand`
 
-### 2. 角色引用
-- `<character_constraint>` 中的角色直接引用：`(character_name (series):1.1)`
+### 2. 角色引用与人数
+- 角色名和人数标签（1girl, solo, 2girls 等）已由 S2a 添加，**不要重复输出**
 
 ### 3. 人物外貌
 - 用户描述了发色/发型 → 提取并适当补充 1-2 个相关细节
@@ -240,7 +248,9 @@ _CHARACTER_FEATURE_TEMPLATE = """
   例："穿JK制服" → `serafuku, pleated skirt, knee socks, loafers, ribbon tie`
   例："穿白色连衣裙" → `white dress, flowing skirt, lace trim, off-shoulder`
   例："穿雷电将军全套衣服" → `purple kimono, obi sash, gold ornaments, geta, thighhighs`
-- 用户**没提**服装 → **不写任何服装标签**
+- 如有 `<knowledge_reference>`，优先参考其中的角色/服装/场景信息
+用户**没提**服装 → **不写任何服装标签**
+- 用户指定了服装 → 对应的服装标签加权 `(tag:1.1)`
 
 ### 5. 动作与表情
 - 用户描述了动作 → 提取并补充 1-2 个自然关联的动作细节
@@ -249,16 +259,9 @@ _CHARACTER_FEATURE_TEMPLATE = """
 - 用户描述了表情 → 提取
 - 用户**没提**动作/表情 → **不写**
 
-### 6. 多人场景 — 特征必须绑定到对应角色！
-- 输出标签时，每个角色的特征紧跟该角色的引用标签后面，形成"角色→特征簇"
-- 结构：`[(角色A:1.1), A的外貌, A的服装, A的动作, (角色B:1.1), B的外貌, B的服装, B的动作]`
-- 例："初音未来穿浴衣跳舞，镜音连穿西装挥手"
-  → `["(hatsune miku (vocaloid):1.1)", "yukata", "obi sash", "dancing", "dynamic pose", "smile", "(kagamine len (vocaloid):1.1)", "black suit", "necktie", "waving hand", "looking at viewer"]`
-- **不要把不同角色的特征混在一起**
-
-### 7. 用户完全没描述人物特征
+### 6. 用户完全没描述人物特征
 - 只输出角色引用标签和基本人数标签
-- 例："初音未来和镜音连" → `["(hatsune miku (vocaloid):1.1)", "1girl", "(kagamine len (vocaloid):1.1)", "1boy"]`
+- 例："初音未来和镜音连" → `["(hatsune miku (vocaloid):1.05)", "1girl", "(kagamine len (vocaloid):1.1)", "1boy"]`
 - negative 始终输出标准负面标签</hard_rules>
 
 <output_format>
@@ -284,10 +287,12 @@ CHARACTER_FEATURE_TEMPLATE = _CHARACTER_FEATURE_TEMPLATE
 _CHARACTER_DETAIL_TEMPLATE = """
 <role>
 你是角色外观细节补充器。
-任务：根据外貌维度覆盖分析结果，为已识别的角色补充**未覆盖维度**的外观细节标签。
+**必须先用 web_search 逐个搜索未覆盖维度（如 "[角色名] hair color"、"[角色名] eye color"），从搜索结果提取准确标签。**
+只输出搜索结果中确认存在的特征，不要编造。
 </role>
 
 <rules>
+- 如有 `<knowledge_reference>`，**优先使用**其中的角色外观信息，不要用训练数据猜测
 - **每个标签 2-5 词完整短语**：`long blue hair` 不是 `long, blue, hair`；`white sailor uniform` 不是 `white, sailor, uniform`
 - 你必须覆盖以下每个维度（已覆盖的跳过，不确定的跳过）：
 
@@ -375,6 +380,7 @@ _APPEARANCE_ANALYSIS_TEMPLATE = """
 
 <rules>
 - 用户描述里明确提到的维度 → 加入 covered 数组
+- `<stage2b_generated_tags>` 中的标签对应的维度 → 同样视为已覆盖
 - 没提到的 → 不加入
 - **"穿XX的衣服/服装/套装/全套" → 全部服装维度（上装、下装、腿部、足部、头部配饰、饰品配件）一次性标记为 covered**
 - "穿白色连衣裙" → 只标记上装
@@ -449,7 +455,7 @@ WORKFLOW_ANALYSIS_TEMPLATE = _WORKFLOW_ANALYSIS_TEMPLATE
 
 # ==================== 默认提示词 ====================
 
-DEFAULT_NEGATIVE_PROMPT = "worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, text, error, blurry, cropped, bad anatomy, bad hands, poorly drawn hands, mutated hands, missing fingers, extra digit, fewer digits, fused fingers, too many fingers, extra arms, extra legs, extra limbs, malformed limbs, long neck, deformed, disfigured, gross proportions, nsfw"
+DEFAULT_NEGATIVE_PROMPT = "worst quality, low quality, jpeg artifacts, signature, watermark, username, text, error, blurry, bad anatomy, bad hands, poorly drawn hands, bad feet, bad shoes, extra shoes, missing fingers, extra digit, too many fingers, extra arms, extra legs, extra limbs, malformed limbs, deformed, poorly drawn face, bad face, long neck, cross-eyed, nsfw"
 
 QUALITY_TAGS = "masterpiece, best quality, newest, absurdres"
 
@@ -458,25 +464,24 @@ CHARACTER_DETAIL_TAGS = ["detailed face", "detailed eyes", "beautiful detailed h
 
 # 人物类负面提示词
 CHARACTER_NEGATIVE_TAGS = [
-    "worst quality", "low quality", "normal quality", "jpeg artifacts",
+    "worst quality", "low quality", "jpeg artifacts",
     "signature", "watermark", "username", "text", "error",
-    "blurry", "cropped",
-    "bad anatomy", "bad hands", "poorly drawn hands", "mutated hands",
-    "bad feet",
-    "missing fingers", "extra digit", "fewer digits", "fused fingers", "too many fingers",
+    "blurry",
+    "bad anatomy", "bad hands", "poorly drawn hands",
+    "bad feet", "bad shoes", "extra shoes",
+    "missing fingers", "extra digit", "too many fingers",
     "extra arms", "extra legs", "extra limbs", "malformed limbs",
-    "deformed", "disfigured", "gross proportions",
-    "poorly drawn face", "bad face", "fused face",
+    "deformed",
+    "poorly drawn face", "bad face",
     "long neck", "cross-eyed",
     "nsfw",
 ]
 
-# 非人物类负面提示词（基础版）
+# 非人物类负面提示词
 NON_CHARACTER_NEGATIVE_TAGS = [
-    "worst quality", "low quality", "normal quality", "jpeg artifacts",
-    "signature", "watermark", "username", "text", "error",
-    "blurry", "cropped",
-    "deformed", "ugly",
+    "worst quality", "low quality", "jpeg artifacts",
+    "signature", "watermark", "username",
+    "blurry", "deformed",
 ]
 
 # 人物类关键词检测

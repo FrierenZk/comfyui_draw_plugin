@@ -13,10 +13,8 @@ from .core.prompt_rules import (
     CHARACTER_NEGATIVE_TAGS,
     NON_CHARACTER_NEGATIVE_TAGS,
 )
-from .core.generation import (
-    ComfyUIConnectionError,
-    ComfyUIDrawGenerator,
-)
+from .core.exceptions import ComfyUIConnectionError
+from .core.generation import ComfyUIDrawGenerator
 
 
 class ComfyUIDrawInvocation:
@@ -173,21 +171,27 @@ class ComfyUIDrawInvocation:
     # ── 工作流修改 ──────────────────────────────────────────
 
     def _detect_prompt_nodes_by_code(self, workflow: dict) -> tuple[str | None, str | None]:
-        """通过 KSampler 连接关系检测正/负面 CLIPTextEncode 节点 ID。"""
+        """检测正/负面 CLIPTextEncode 节点：遍历所有带 positive/negative 输入的采样器。"""
         pos_node = neg_node = None
         for node_id, node in workflow.items():
-            if node.get("class_type") == "KSampler":
-                inputs = node.get("inputs", {})
-                for key, ref in (("positive", "pos_node"), ("negative", "neg_node")):
-                    ref_list = inputs.get(key, [])
-                    if isinstance(ref_list, list) and ref_list:
-                        node_id_str = str(ref_list[0])
-                        target = workflow.get(node_id_str, {})
-                        if target.get("class_type") == "CLIPTextEncode":
-                            if key == "positive":
-                                pos_node = node_id_str
-                            else:
-                                neg_node = node_id_str
+            inputs = node.get("inputs", {})
+            if "positive" not in inputs and "negative" not in inputs:
+                continue
+            for key in ("positive", "negative"):
+                ref_list = inputs.get(key, [])
+                if isinstance(ref_list, list) and ref_list:
+                    target_id = str(ref_list[0])
+                    target = workflow.get(target_id, {})
+                    if target.get("class_type") == "CLIPTextEncode":
+                        if key == "positive" and pos_node is None:
+                            pos_node = target_id
+                        elif key == "negative" and neg_node is None:
+                            neg_node = target_id
+            # 找到主采样器的节点就退出（优先 KSampler/KSamplerAdvanced）
+            if pos_node and neg_node and any(
+                t in node.get("class_type", "") for t in ("KSampler", "Sampler")
+            ):
+                break
         return pos_node, neg_node
 
     def modify_workflow(

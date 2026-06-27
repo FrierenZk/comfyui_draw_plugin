@@ -2,7 +2,7 @@
 # 通过 MCP 连接 ComfyUI，使用麦麦工作流生成图片。
 
 [plugin]
-config_version = "1.0.2"
+config_version = "1.1.0"
 # 触发命令名（修改后需重启插件）
 command_name = "生图"
 # 是否启用插件
@@ -19,13 +19,18 @@ port = 8188
 workflow_file = "麦麦工作流.json"
 
 [llm]
-# 提示词生成使用的模型标识符
+# 模型标识符（Anthropic 直连时自动作为 model ID）
 model_name = "deepseek-v4-pro"
 # LLM 温度；常用 0.2~1.0，越高越发散。Stage1/3 固定使用 0.1/0.15
 temperature = 0.3
 # Stage1 角色名提取最大 token
-max_tokens_char_extract = 200
+max_tokens_char_extract = 1500
 # Stage2 场景构图最大 token
-max_tokens_scene = 2000
+max_tokens_scene = 2500
 # Stage3 角色细节补充最大 token
-max_tokens_char_detail = 600
+max_tokens_char_detail = 4000
+# ---- Anthropic SDK 直连 ----
+use_anthropic_api = false
+anthropic_api_key = ""
+anthropic_base_url = "https://api.deepseek.com/anthropic"
+anthropic_env = []
