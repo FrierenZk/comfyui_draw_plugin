@@ -109,7 +109,8 @@ class StagesMixin:
             if characters:
                 char_details = await self._get_cached_char_tags(task_name, characters, covered_dims, extra_info, s3_max_tokens)
                 if char_details:
-                    pos_list = pos_list + char_details
+                    char_idx = next((i for i, t in enumerate(pos_list) if ":" in t and "(" in t), len(pos_list))
+                    pos_list = pos_list[:char_idx + 1] + char_details + pos_list[char_idx + 1:]
                     self.inv._debug_log(f"Stage3b 角色细节补充: {len(char_details)} tags → {', '.join(char_details)}")
 
             # 负面提示词：默认 + LLM 上下文补充

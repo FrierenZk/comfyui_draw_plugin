@@ -9,7 +9,6 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 from .core.prompt_rules import (
-    CHARACTER_DETAIL_TAGS,
     CHARACTER_NEGATIVE_TAGS,
     NON_CHARACTER_NEGATIVE_TAGS,
 )
@@ -231,20 +230,6 @@ class ComfyUIDrawInvocation:
         for tag in required:
             if tag not in tags_lower:
                 tags.insert(0, tag)
-
-        is_character = any(
-            kw in " ".join(tags).lower()
-            for kw in [
-                "girl", "boy", "woman", "man", "1girl", "1boy",
-                "anime", "selfie", "face",
-            ]
-        )
-
-        if is_character:
-            tags_lower = [t.lower() for t in tags]
-            for tag in CHARACTER_DETAIL_TAGS:
-                if tag not in tags_lower:
-                    tags.append(tag)
 
         return tags
 
