@@ -26,14 +26,50 @@ def _get_command_name() -> str:
 COMMAND_NAME = _get_command_name()
 
 
+def _get_switch_command_name() -> str:
+    import os as _os
+    _path = _os.path.join(_os.path.dirname(__file__), "config.toml")
+    try:
+        with open(_path, "r", encoding="utf-8") as _f:
+            for _line in _f:
+                _m = re.match(r'^\s*switch_workflow_command\s*=\s*"(.+)"', _line)
+                if _m:
+                    return _m.group(1)
+    except Exception:
+        pass
+    return "切换工作流"
+
+
+SWITCH_COMMAND = _get_switch_command_name()
+
+
+def _get_list_wf_command_name() -> str:
+    import os as _os
+    _path = _os.path.join(_os.path.dirname(__file__), "config.toml")
+    try:
+        with open(_path, "r", encoding="utf-8") as _f:
+            for _line in _f:
+                _m = re.match(r'^\s*list_workflow_command\s*=\s*"(.+)"', _line)
+                if _m:
+                    return _m.group(1)
+    except Exception:
+        pass
+    return "工作流列表"
+
+
+LIST_WF_COMMAND = _get_list_wf_command_name()
+
+
 # ==================== 配置模型 ====================
 
 class PluginSection(PluginConfigBase):
     """插件基础配置"""
     __ui_label__ = "基础设置"
 
-    config_version: str = Field(default="1.1.0", description="配置版本号")
+    config_version: str = Field(default="1.1.1", description="配置版本号")
     command_name: str = Field(default=COMMAND_NAME, description="触发命令名（修改后需重启插件）")
+    switch_workflow_command: str = Field(default="切换工作流", description="切换工作流命令名（修改后需重启插件）")
+    list_workflow_command: str = Field(default="工作流列表", description="列出工作流命令名（修改后需重启插件）")
     enabled: bool = Field(default=True, description="是否启用插件")
     debug_log: bool = Field(default=False, description="是否启用调试日志")
 
@@ -53,6 +89,10 @@ class ComfyUISection(PluginConfigBase):
     workflow_file: str = Field(
         default="麦麦工作流.json",
         description="工作流文件名"
+    )
+    optional_workflows: list[str] = Field(
+        default_factory=list,
+        description="备选工作流文件"
     )
 
 
@@ -92,13 +132,15 @@ class ComfyUIDrawPlugin(MaiBotPlugin):
     def __init__(self):
         super().__init__()
         self.invocation = None
+        self._current_workflow = ""  # 插件级变量，切换立即生效
 
     async def on_load(self) -> None:
         """插件加载时初始化"""
+        self._current_workflow = self.get_config_value("comfyui", "workflow_file", "麦麦工作流.json")
         self.invocation = ComfyUIDrawInvocation(self)
         cmd = self._get_cmd()
         self.ctx.logger.info(
-            f"ComfyUI 麦麦工作流绘图插件已加载, command_name=/{cmd}"
+            f"ComfyUI 麦麦工作流绘图插件已加载, command_name=/{cmd}, workflow={self._current_workflow}"
         )
 
     async def on_unload(self) -> None:
@@ -181,6 +223,85 @@ class ComfyUIDrawPlugin(MaiBotPlugin):
         return None, None
 
     @Command(
+        SWITCH_COMMAND,
+        description="切换 ComfyUI 工作流",
+        pattern=rf"^/{SWITCH_COMMAND}(?=\s|$)"
+    )
+    async def handle_switch_workflow(self, **kwargs):
+        """处理 /切换工作流 命令"""
+        cmd = self.get_config_value("plugin", "switch_workflow_command", "切换工作流")
+        stream_id = kwargs.get("stream_id", "")
+        text = kwargs.get("text", "").strip()
+
+        content = text
+        prefix = f"/{cmd}"
+        if content.startswith(prefix):
+            content = content[len(prefix):].strip()
+
+        if not content:
+            await self.ctx.send.text(f"请指定工作流名称，例如：/{cmd} 麦麦工作流2", stream_id)
+            return False, "缺少工作流名称", 1
+
+        target = content.strip()
+        optional = self.get_config_value("comfyui", "optional_workflows", [])
+        current = self.get_config_value("comfyui", "workflow_file", "麦麦工作流.json")
+
+        # 自动补 .json 匹配
+        match = target
+        if not target.endswith(".json") and f"{target}.json" in optional:
+            match = f"{target}.json"
+
+        if match not in optional:
+            available = ", ".join(f.replace(".json", "") for f in optional) if optional else "无备选工作流"
+            await self.ctx.send.text(
+                f"❌ 备选工作流中未找到「{target}」。\n当前可用：{available}", stream_id
+            )
+            self.ctx.logger.info(f"切换工作流失败: {target} 不在 optional_workflows 中")
+            return False, "工作流不存在", 1
+
+        # 交换：current 移进 optional，match 移出设为默认
+        optional = list(optional)
+        optional.remove(match)
+        optional.append(current)
+        optional = list(dict.fromkeys(optional))
+
+        # _current_workflow 立即生效，config 模型持久化
+        self._current_workflow = match
+        self.config.comfyui.workflow_file = match
+        self.config.comfyui.optional_workflows = optional
+
+        display = match.replace(".json", "")
+        await self.ctx.send.text(
+            f"✅ 已切换到工作流「{display}」（原「{current.replace('.json', '')}」移入备选）", stream_id
+        )
+        self.ctx.logger.info(f"切换工作流: {current} → {match}")
+        return True, f"已切换到 {display}", 1
+
+    @Command(
+        LIST_WF_COMMAND,
+        description="列出当前和备选工作流",
+        pattern=rf"^/{LIST_WF_COMMAND}$"
+    )
+    async def handle_list_workflows(self, **kwargs):
+        """处理 /切换工作流列表 命令"""
+        stream_id = kwargs.get("stream_id", "")
+        current = self._current_workflow or self.get_config_value("comfyui", "workflow_file", "麦麦工作流.json")
+        optional = self.get_config_value("comfyui", "optional_workflows", [])
+        lines = [
+            "📂 当前工作流",
+            f"  ⭐ {current.replace('.json', '')}",
+            "📋 备选工作流",
+        ]
+        if optional:
+            for wf in optional:
+                marker = "  ☆" if wf == current else "    "
+                lines.append(f"{marker} {wf.replace('.json', '')}")
+        else:
+            lines.append("  （无）")
+        await self.ctx.send.text("\n".join(lines), stream_id)
+        return True, "工作流列表已发送", 1
+
+    @Command(
         f"{COMMAND_NAME}帮助",
         description="显示生图插件帮助",
         pattern=rf"^/{COMMAND_NAME}帮助$"
@@ -188,6 +309,8 @@ class ComfyUIDrawPlugin(MaiBotPlugin):
     async def handle_help_command(self, **kwargs):
         """处理 /生图帮助 命令"""
         cmd = self._get_cmd()
+        sc = self.get_config_value("plugin", "switch_workflow_command", "切换工作流")
+        lc = self.get_config_value("plugin", "list_workflow_command", "工作流列表")
         stream_id = kwargs.get("stream_id", "")
         help_text = (
             "ComfyUI 麦麦工作流绘图插件\n"
@@ -195,6 +318,8 @@ class ComfyUIDrawPlugin(MaiBotPlugin):
             "命令：\n"
             f"  /{cmd} <描述> - LLM 解析后生成图片\n"
             f"  /{cmd} -p <正面> -n <负面> - 直接使用提示词\n"
+            f"  /{sc} <名称> - 切换到备选工作流\n"
+            f"  /{lc} - 列出当前和备选工作流\n"
             f"  /{cmd}帮助 - 显示此帮助\n"
             "\n"
             "示例：\n"

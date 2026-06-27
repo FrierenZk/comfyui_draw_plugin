@@ -2,9 +2,13 @@
 # 通过 MCP 连接 ComfyUI，使用麦麦工作流生成图片。
 
 [plugin]
-config_version = "1.1.0"
+config_version = "1.1.1"
 # 触发命令名（修改后需重启插件）
 command_name = "生图"
+# 切换工作流命令名（修改后需重启插件）
+switch_workflow_command = "切换工作流"
+# 列出工作流命令名（修改后需重启插件）
+list_workflow_command = "工作流列表"
 # 是否启用插件
 enabled = true
 # 是否启用调试日志
@@ -15,8 +19,10 @@ debug_log = false
 host = "127.0.0.1"
 # ComfyUI 服务端口
 port = 8188
-# 工作流文件名
+# 默认工作流文件名
 workflow_file = "麦麦工作流.json"
+# 备选工作流（默认失败时逐一尝试）
+optional_workflows = []
 
 [llm]
 # 模型标识符（Anthropic 直连时自动作为 model ID）

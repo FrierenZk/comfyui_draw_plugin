@@ -88,7 +88,7 @@ class StagesMixin:
                 ),
                 self._generate_character_features(
                     task_name, f"{description}\n\n<search_info>\n{extra_info}\n</search_info>" if extra_info else description,
-                    characters, s2_max_tokens, with_search=False
+                    characters, s2_max_tokens, with_search=0
                 ),
             )
             # 人物特征紧贴角色引用后面
@@ -145,7 +145,7 @@ class StagesMixin:
                 f"<knowledge_reference>\n{knowledge[:1000]}\n</knowledge_reference>\n\n<user_request>",
             )
 
-        success, resp = await self._llm_generate(task_name=task_name, prompt=prompt, temperature=0.1, max_tokens=max_tokens, validate=lambda t: self._validate_json_response(t, "characters"))
+        success, resp = await self._llm_generate(task_name=task_name, prompt=prompt, temperature=0.1, max_tokens=max_tokens, validate=lambda t: self._validate_json_response(t, "characters"), with_search=2)
 
         if not success or not resp:
             self.logger.warning("Stage1 角色提取失败，跳过")
@@ -190,7 +190,7 @@ class StagesMixin:
                 f"<knowledge_reference>\n{knowledge[:2000]}\n</knowledge_reference>\n\n<user_request>",
             )
 
-        success, resp = await self._llm_generate(task_name=task_name, prompt=prompt, temperature=temperature, max_tokens=max_tokens, validate=lambda t: self._validate_json_response(t, "positive"), with_search=False)
+        success, resp = await self._llm_generate(task_name=task_name, prompt=prompt, temperature=temperature, max_tokens=max_tokens, validate=lambda t: self._validate_json_response(t, "positive"), with_search=0)
 
         if not success or not resp:
             self.logger.error("Stage2 场景生成失败")
@@ -244,8 +244,8 @@ class StagesMixin:
         """分析用户描述+Stage2b输出中已覆盖的外观维度。"""
         prompt = APPEARANCE_ANALYSIS_TEMPLATE.replace("<<USER_REQUEST>>", context)
 
-        s3a_max = self.inv._get_config("llm", "max_tokens_char_extract", 1500)
-        success, resp = await self._llm_generate(task_name=task_name, prompt=prompt, temperature=0.1, max_tokens=s3a_max, validate=lambda t: self._validate_json_response(t, "covered"), with_search=False)
+        s3a_max = self.inv._get_config("llm", "max_tokens_char_extract", 2000)
+        success, resp = await self._llm_generate(task_name=task_name, prompt=prompt, temperature=0.1, max_tokens=s3a_max, validate=lambda t: self._validate_json_response(t, "covered"), with_search=0)
 
         if not success or not resp:
             self.logger.warning("Stage3a 分析失败，跳过")
@@ -287,7 +287,7 @@ class StagesMixin:
             "<knowledge_reference>\n</knowledge_reference>\n\n", ""
         )
 
-        success, resp = await self._llm_generate(task_name=task_name, prompt=prompt, temperature=0.15, max_tokens=max_tokens, validate=lambda t: self._validate_json_response(t, "character_positive"), with_search=False)
+        success, resp = await self._llm_generate(task_name=task_name, prompt=prompt, temperature=0.15, max_tokens=max_tokens, validate=lambda t: self._validate_json_response(t, "character_positive"), with_search=0)
 
         if not success or not resp:
             self.logger.warning("Stage3 角色细节补充失败，跳过")
@@ -314,7 +314,7 @@ class StagesMixin:
             "不要添加质量/解剖/水印类标签（已有）。无必要则输出 {\"negative\": []}"
         )
         success, resp = await self._llm_generate(
-            task_name=task_name, prompt=prompt, temperature=0.2, max_tokens=500, with_search=False
+            task_name=task_name, prompt=prompt, temperature=0.2, max_tokens=500, with_search=0
         )
         if not success or not resp:
             return []
@@ -360,8 +360,8 @@ class StagesMixin:
                 overlap = len(set(tags) & old_set) / max(len(set(tags) | old_set), 1)
                 old_tier = self._TAGS_CACHE_TIERS.index(entry.get("ttl", 3))
                 new_ttl = self._TAGS_CACHE_TIERS[min(old_tier + 1, 3)] if overlap > 0.5 else 3
-            # 仅 Anthropic 路径（有 web_search）才写标签缓存，旧 API 不准
-            if self.inv._get_config("llm", "use_anthropic_api", False):
+            # 仅 Anthropic 路径且未截断才写标签缓存
+            if self.inv._get_config("llm", "use_anthropic_api", False) and not getattr(self, "_last_truncated", False):
                 tags_cache[cache_key] = {"data": tags, "ts": now, "ttl": new_ttl}
                 self._save_json_cache(self._TAGS_CACHE_FILE, tags_cache)
         return tags

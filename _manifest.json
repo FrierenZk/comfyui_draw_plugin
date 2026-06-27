@@ -1,6 +1,6 @@
 {
   "manifest_version": 2,
-  "version": "1.1.0",
+  "version": "1.1.1",
   "name": "ComfyUI 麦麦工作流绘图插件（comfyui_draw_plugin）",
   "description": "通过 MCP 连接 ComfyUI，使用麦麦工作流生成图片。支持 /生图 命令，自动将中文描述转换为英文提示词。",
   "author": {

@@ -155,7 +155,7 @@ class ComfyUIDrawGenerator(LLMClientMixin, StagesMixin):
     # ── 流程步骤 ──────────────────────────────────────────
 
     async def _load_workflow(self) -> dict:
-        workflow_file = self.inv._get_config("comfyui", "workflow_file", "麦麦工作流.json")
+        workflow_file = getattr(self.inv.plugin, "_current_workflow", "") or self.inv._get_config("comfyui", "workflow_file", "麦麦工作流.json")
         result = await self.inv.call_tool("get_workflow", {
             "filename": workflow_file,
             "format": "api",
@@ -167,7 +167,8 @@ class ComfyUIDrawGenerator(LLMClientMixin, StagesMixin):
         if not workflow:
             raise WorkflowLoadError(f"解析工作流失败: workflow_file={workflow_file}")
 
-        self.inv._debug_log(f"获取工作流成功，节点数: {len(workflow)}")
+        self.inv._debug_log(f"获取工作流成功: {workflow_file}, 节点数: {len(workflow)}")
+        self.logger.info(f"使用工作流: {workflow_file}")
         return workflow
 
     # ── 工作流节点缓存 ────────────────────────────────────

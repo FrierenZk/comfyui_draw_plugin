@@ -43,9 +43,9 @@ class LLMClientMixin:
 
     async def _llm_generate(
         self, task_name: str, prompt: str, temperature: float, max_tokens: int,
-        validate: callable = None, with_search: bool = True,
+        validate: callable = None, with_search: int = 0,
     ) -> tuple[bool, str]:
-        """统一 LLM 调用。validate 不通过则重试最多 3 次，全失败返回 (False, "")。"""
+        """统一 LLM 调用。with_search=N 表示最多 N 次搜索（0=不搜索）。"""
         for attempt in range(3):
             text = await self._llm_generate_once(task_name, prompt, temperature, max_tokens, with_search)
             if not text:
@@ -65,9 +65,9 @@ class LLMClientMixin:
 
     async def _llm_generate_once(
         self, task_name: str, prompt: str, temperature: float, max_tokens: int,
-        with_search: bool = True,
+        with_search: int = 0,
     ) -> str:
-        """Anthropic SDK 直连调用，带 server-side web_search。"""
+        """Anthropic SDK 直连调用。with_search=N 表示最多 N 次搜索（0=不搜索）。"""
         base_url = self.inv._get_config("llm", "anthropic_base_url", "https://api.deepseek.com/anthropic")
         model = self.inv._get_config("llm", "model_name", "deepseek-v4-pro")
 
@@ -92,12 +92,14 @@ class LLMClientMixin:
                 pass  # fall through to old API
             else:
                 try:
-                    tools_arg = [{"type": "web_search_20260209", "name": "web_search"}] if with_search else None
+                    self._last_truncated = False
+                    tools_arg = [{"type": "web_search_20260209", "name": "web_search", "max_uses": with_search}] if with_search > 0 else None
                     client = AsyncAnthropic(api_key=api_key, base_url=base_url)
                     t0 = time.monotonic()
                     kwargs = dict(model=model, max_tokens=max_tokens,
                                   messages=[{"role": "user", "content": prompt}],
-                                  system="Output ONLY the requested JSON format, no markdown, no explanations.")
+                                  system="Output ONLY the requested JSON format, no markdown, no explanations. Search only for specific, essential facts. Do not broad-search.",
+                                  thinking={"type": "enabled" if with_search > 0 else "disabled"})
                     if tools_arg:
                         kwargs["tools"] = tools_arg
                     response = await client.messages.create(**kwargs)
@@ -113,26 +115,22 @@ class LLMClientMixin:
                             f"cache_read={getattr(usage, 'cache_read_input_tokens', 0)} "
                             f"耗时={elapsed:.1f}s"
                         )
-                        if out_tk >= max_tokens:
+                        self._last_truncated = out_tk >= max_tokens
+                        if self._last_truncated:
                             self.logger.warning(
                                 f"LLM 输出截断! out={out_tk} >= max={max_tokens}，考虑调高对应 max_tokens 配置"
                             )
 
-                    # 记录搜索来源
-                    for b in response.content:
-                        bt = getattr(b, "type", "")
-                        if "search" in bt:
-                            self.inv._debug_log(f"LLM 搜索来源: type={bt}")
-                        elif bt == "text":
-                            pass  # 文本内容在下面提取
+                    # 记录各 block 类型
+                    block_types = [getattr(b, "type", "?") for b in response.content]
+                    self.inv._debug_log(f"LLM blocks: {block_types}")
 
                     text = " ".join(
                         b.text for b in response.content
                         if hasattr(b, "text") and b.text
                     )
-                    if text:
-                        self.inv._debug_log(f"LLM 原生响应: {text[:200]}")
-                        return text
+                    self.inv._debug_log(f"LLM 原生响应: {text[:200]}")
+                    return text  # 即使空也不回退旧API，交给 _llm_generate 重试
                 except Exception as e:
                     self.inv._debug_log(f"Anthropic 直连失败，回退旧 API: {e}")
                 finally:
@@ -222,7 +220,7 @@ class LLMClientMixin:
 
         text = await self._llm_generate_once(
             task_name=task_name, prompt=prompt,
-            temperature=0.1, max_tokens=800, with_search=True,
+            temperature=0.1, max_tokens=800, with_search=2,
         )
         result = text.strip() if text else ""
         if not result:
@@ -235,8 +233,8 @@ class LLMClientMixin:
             new_ttl = self._CACHE_TIERS[min(old_tier + 1, 3)] if similar else 3
             self.inv._debug_log(f"缓存升级: {entry.get('ttl')}→{new_ttl}天 ({'相似' if similar else '变化'})")
 
-        # 仅 Anthropic 路径（有 web_search）才写缓存，旧 API 不准
-        if self.inv._get_config("llm", "use_anthropic_api", False):
+        # 仅 Anthropic 路径且未截断才写缓存
+        if self.inv._get_config("llm", "use_anthropic_api", False) and not getattr(self, "_last_truncated", False):
             cache[cache_key] = {"data": result, "ts": now, "ttl": new_ttl}
             self._save_json_cache(cache_file, cache)
         return result
@@ -246,7 +244,7 @@ class LLMClientMixin:
         text = await self._llm_generate_once(
             task_name=task_name,
             prompt=f"Are these two character descriptions semantically the same? Reply YES or NO.\n\nA: {old[:300]}\n\nB: {new[:300]}",
-            temperature=0.1, max_tokens=10, with_search=False,
+            temperature=0.1, max_tokens=10, with_search=0,
         )
         return "YES" in text.upper()
 
