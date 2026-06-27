@@ -313,7 +313,7 @@ class StagesMixin:
             "不要添加质量/解剖/水印类标签（已有）。无必要则输出 {\"negative\": []}"
         )
         success, resp = await self._llm_generate(
-            task_name=task_name, prompt=prompt, temperature=0.2, max_tokens=100, with_search=False
+            task_name=task_name, prompt=prompt, temperature=0.2, max_tokens=300, with_search=False
         )
         if not success or not resp:
             return []
