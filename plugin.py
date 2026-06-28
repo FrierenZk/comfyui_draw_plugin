@@ -66,7 +66,7 @@ class PluginSection(PluginConfigBase):
     """插件基础配置"""
     __ui_label__ = "基础设置"
 
-    config_version: str = Field(default="1.1.1", description="配置版本号")
+    config_version: str = Field(default="1.1.2", description="配置版本号")
     command_name: str = Field(default=COMMAND_NAME, description="触发命令名（修改后需重启插件）")
     switch_workflow_command: str = Field(default="切换工作流", description="切换工作流命令名（修改后需重启插件）")
     list_workflow_command: str = Field(default="工作流列表", description="列出工作流命令名（修改后需重启插件）")

@@ -2,7 +2,7 @@
 # 通过 MCP 连接 ComfyUI，使用麦麦工作流生成图片。
 
 [plugin]
-config_version = "1.1.1"
+config_version = "1.1.2"
 # 触发命令名（修改后需重启插件）
 command_name = "生图"
 # 切换工作流命令名（修改后需重启插件）

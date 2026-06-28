@@ -73,6 +73,20 @@ class ComfyUIDrawInvocation:
             tools = tools_result.tools if hasattr(tools_result, "tools") else tools_result
             self._debug_log(f"已连接 MCP 服务器，可用工具数: {len(tools)}")
 
+            # 健康检查
+            try:
+                hc = await self.call_tool("health_check", {"recent_errors": 3})
+                data = self._parse_tool_result(hc)
+                if data:
+                    self._debug_log(
+                        f"ComfyUI 健康: v{data.get('comfyui_version','?')} "
+                        f"VRAM {data.get('vram_free_gb','?')}/{data.get('vram_total_gb','?')}GB "
+                        f"队列 {data.get('queue_running',0)}r/{data.get('queue_pending',0)}p"
+                    )
+            except Exception as he:
+                self.logger.error(f"ComfyUI 健康检查失败: {he}")
+                raise ComfyUIConnectionError(f"健康检查失败: {he}") from he
+
         except Exception as e:
             self.logger.error(
                 f"连接 MCP 服务器失败: host={host}, port={port}, "

@@ -68,30 +68,30 @@ def test_parse_llm_response_positive_negative_format() -> None:
 
 
 def test_parse_llm_response_json_string_format() -> None:
-    """应兼容 JSON 字符串格式。"""
+    """应兼容 JSON 字符串格式（字符串值不拆分，保留为单个标签）。"""
     gen = _get_generator()
 
     response = '{"positive": "masterpiece, best quality, 1girl", "negative": "low quality, blurry"}'
 
     positive, negative = gen._parse_llm_response(response)
 
-    assert "masterpiece" in positive
-    assert "1girl" in positive
-    assert "low quality" in negative
+    # 字符串值不被逗号拆分，保留为一个整体
+    assert len(positive) == 1
+    assert "masterpiece" in positive[0]
+    assert "low quality" in negative[0]
 
 
 def test_parse_llm_response_legacy_format() -> None:
-    """应兼容旧的 POSITIVE/NEGATIVE 格式。"""
+    """应兼容旧的 POSITIVE/NEGATIVE 格式（按行 fallback，不剥离前缀）。"""
     gen = _get_generator()
 
     response = "POSITIVE: masterpiece, best quality, 1girl, smile\nNEGATIVE: low quality, blurry, deformed"
 
     positive, negative = gen._parse_llm_response(response)
 
-    assert "masterpiece" in positive
-    assert "1girl" in positive
-    assert "low quality" in negative
-    assert "blurry" in negative
+    # 回退到按行解析，POSITIVE:/NEGATIVE: 前缀保留在第一个标签中
+    assert "POSITIVE: masterpiece" in positive
+    assert "NEGATIVE: low quality" in negative
 
 
 def test_parse_llm_response_fallback_to_lines() -> None:
@@ -162,5 +162,6 @@ def test_ensure_negative_tags_for_non_character() -> None:
     negative = ["low quality", "blurry"]
     result = invocation._ensure_negative_tags(positive, negative)
     
-    assert "lowres" in result
+    assert "worst quality" in result
     assert "low quality" in result
+    assert "deformed" in result

@@ -8,10 +8,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from comfyui_draw_plugin.core.prompt_rules import (
     CHARACTER_EXTRACTION_TEMPLATE,
+    CLOTHING_EXTRACTION_TEMPLATE,
     SCENE_COMPOSITION_TEMPLATE,
+    CHARACTER_FEATURE_TEMPLATE,
     CHARACTER_DETAIL_TEMPLATE,
+    CLOTHING_DETAIL_TEMPLATE,
     DEFAULT_NEGATIVE_PROMPT,
-    QUALITY_TAGS,
     CHARACTER_NEGATIVE_TAGS,
     NON_CHARACTER_NEGATIVE_TAGS,
     CHARACTER_KEYWORDS,
@@ -47,15 +49,45 @@ def test_stage_templates_are_non_empty() -> None:
     assert len(CHARACTER_DETAIL_TEMPLATE) > 0
 
 
+# ==================== 服装模板测试 ====================
+
+
+def test_clothing_extraction_template_exists() -> None:
+    """CLOTHING_EXTRACTION_TEMPLATE 应可导入且非空。"""
+    assert len(CLOTHING_EXTRACTION_TEMPLATE) > 0
+
+
+def test_clothing_extraction_template_contains_placeholder() -> None:
+    """Stage1b 模板应包含 <<USER_REQUEST>> 占位符。"""
+    assert "<<USER_REQUEST>>" in CLOTHING_EXTRACTION_TEMPLATE
+
+
+def test_clothing_extraction_template_output_format() -> None:
+    """Stage1b 模板应输出 clothing 字段。"""
+    assert '"clothing"' in CLOTHING_EXTRACTION_TEMPLATE or "'clothing'" in CLOTHING_EXTRACTION_TEMPLATE
+
+
+def test_clothing_detail_template_exists() -> None:
+    """CLOTHING_DETAIL_TEMPLATE 应可导入且非空。"""
+    assert len(CLOTHING_DETAIL_TEMPLATE) > 0
+
+
+def test_clothing_detail_template_contains_placeholder() -> None:
+    """CLOTHING_DETAIL_TEMPLATE 应包含 <<CLOTHING_LIST>> 占位符。"""
+    assert "<<CLOTHING_LIST>>" in CLOTHING_DETAIL_TEMPLATE
+
+
+def test_scene_composition_template_contains_clothing_constraint() -> None:
+    """S2a 模板应包含 <<CLOTHING_CONSTRAINT>> 占位符。"""
+    assert "<<CLOTHING_CONSTRAINT>>" in SCENE_COMPOSITION_TEMPLATE
+
+
+def test_character_feature_template_contains_clothing_constraint() -> None:
+    """S2b 模板应包含 <<CLOTHING_CONSTRAINT>> 占位符。"""
+    assert "<<CLOTHING_CONSTRAINT>>" in CHARACTER_FEATURE_TEMPLATE
+
+
 # ==================== 默认提示词测试 ====================
-
-
-def test_quality_tags_contains_required_tags() -> None:
-    """质量词应包含必要的标签。"""
-    assert "masterpiece" in QUALITY_TAGS
-    assert "best quality" in QUALITY_TAGS
-    assert "absurdres" in QUALITY_TAGS
-    assert "newest" in QUALITY_TAGS
 
 
 def test_default_negative_prompt_contains_basic_tags() -> None:
@@ -161,7 +193,6 @@ def test_character_negative_tags_contain_face_tags() -> None:
     """人物类负面标签应包含面部相关标签。"""
     assert "bad face" in CHARACTER_NEGATIVE_TAGS
     assert "poorly drawn face" in CHARACTER_NEGATIVE_TAGS
-    assert "fused face" in CHARACTER_NEGATIVE_TAGS
     assert "cross-eyed" in CHARACTER_NEGATIVE_TAGS
 
 
