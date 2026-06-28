@@ -133,15 +133,16 @@ class ComfyUIDrawPlugin(MaiBotPlugin):
     def __init__(self):
         super().__init__()
         self.invocation = None
-        self._current_workflow = ""  # 插件级变量，切换立即生效
+        self._stream_workflows: dict[str, str] = {}  # stream_id → workflow，每个对话独立
+        self._default_workflow = ""
 
     async def on_load(self) -> None:
         """插件加载时初始化"""
-        self._current_workflow = self.get_config_value("comfyui", "workflow_file", "麦麦工作流.json")
+        self._default_workflow = self.get_config_value("comfyui", "workflow_file", "麦麦工作流.json")
         self.invocation = ComfyUIDrawInvocation(self)
         cmd = self._get_cmd()
         self.ctx.logger.info(
-            f"ComfyUI 麦麦工作流绘图插件已加载, command_name=/{cmd}, workflow={self._current_workflow}"
+            f"ComfyUI 麦麦工作流绘图插件已加载, command_name=/{cmd}, default_workflow={self._default_workflow}"
         )
 
     async def on_unload(self) -> None:
@@ -201,9 +202,14 @@ class ComfyUIDrawPlugin(MaiBotPlugin):
             asyncio.create_task(self._run_draw(stream_id, content, "", direct=False))
         return True, "图片生成中", 2
 
+    def _get_stream_workflow(self, stream_id: str) -> str:
+        """获取指定对话的当前工作流，未切换过则用默认"""
+        return self._stream_workflows.get(stream_id) or self._default_workflow
+
     async def _run_draw(self, stream_id: str, positive: str, negative: str, direct: bool):
         """在独立 task 中执行图片生成"""
         invocation = ComfyUIDrawInvocation(self)
+        invocation._stream_id = stream_id  # 传递 stream_id 用于读取工作流
         try:
             if direct:
                 await invocation.generate_image_with_prompts(stream_id, positive, negative)
@@ -245,7 +251,6 @@ class ComfyUIDrawPlugin(MaiBotPlugin):
 
         target = content.strip()
         optional = self.get_config_value("comfyui", "optional_workflows", [])
-        current = self.get_config_value("comfyui", "workflow_file", "麦麦工作流.json")
 
         # 自动补 .json 匹配
         match = target
@@ -260,22 +265,14 @@ class ComfyUIDrawPlugin(MaiBotPlugin):
             self.ctx.logger.info(f"切换工作流失败: {target} 不在 optional_workflows 中")
             return False, "工作流不存在", 1
 
-        # 交换：current 移进 optional，match 移出设为默认
-        optional = list(optional)
-        optional.remove(match)
-        optional.append(current)
-        optional = list(dict.fromkeys(optional))
-
-        # _current_workflow 立即生效，config 模型持久化
-        self._current_workflow = match
-        self.config.comfyui.workflow_file = match
-        self.config.comfyui.optional_workflows = optional
+        # 只影响当前对话
+        self._stream_workflows[stream_id] = match
 
         display = match.replace(".json", "")
         await self.ctx.send.text(
-            f"✅ 已切换到工作流「{display}」（原「{current.replace('.json', '')}」移入备选）", stream_id
+            f"✅ 当前对话已切换到工作流「{display}」", stream_id
         )
-        self.ctx.logger.info(f"切换工作流: {current} → {match}")
+        self.ctx.logger.info(f"切换工作流[{stream_id[:8]}]: {current} → {match}")
         return True, f"已切换到 {display}", 1
 
     @Command(
@@ -286,7 +283,7 @@ class ComfyUIDrawPlugin(MaiBotPlugin):
     async def handle_list_workflows(self, **kwargs):
         """处理 /切换工作流列表 命令"""
         stream_id = kwargs.get("stream_id", "")
-        current = self._current_workflow or self.get_config_value("comfyui", "workflow_file", "麦麦工作流.json")
+        current = self._get_stream_workflow(stream_id)
         optional = self.get_config_value("comfyui", "optional_workflows", [])
         lines = [
             "📂 当前工作流",

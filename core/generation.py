@@ -155,7 +155,8 @@ class ComfyUIDrawGenerator(LLMClientMixin, StagesMixin):
     # ── 流程步骤 ──────────────────────────────────────────
 
     async def _load_workflow(self) -> dict:
-        workflow_file = getattr(self.inv.plugin, "_current_workflow", "") or self.inv._get_config("comfyui", "workflow_file", "麦麦工作流.json")
+        stream_id = getattr(self.inv, "_stream_id", "")
+        workflow_file = self.inv.plugin._get_stream_workflow(stream_id) if stream_id else self.inv._get_config("comfyui", "workflow_file", "麦麦工作流.json")
         if not workflow_file.endswith(".json"):
             workflow_file += ".json"
         result = await self.inv.call_tool("get_workflow", {
@@ -257,7 +258,8 @@ class ComfyUIDrawGenerator(LLMClientMixin, StagesMixin):
         return None, None
 
     async def _enqueue_job(self, workflow: dict, positive: str, negative: str) -> str:
-        workflow_file = getattr(self.inv.plugin, "_current_workflow", "") or self.inv._get_config("comfyui", "workflow_file", "麦麦工作流.json")
+        stream_id = getattr(self.inv, "_stream_id", "")
+        workflow_file = self.inv.plugin._get_stream_workflow(stream_id) if stream_id else self.inv._get_config("comfyui", "workflow_file", "麦麦工作流.json")
         if not workflow_file.endswith(".json"):
             workflow_file += ".json"
         model_name = self.inv._get_config("llm", "model_name", "")
