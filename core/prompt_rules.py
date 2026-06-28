@@ -3,103 +3,9 @@
 提示词生成规则 - ComfyUI 格式
 """
 
-# ==================== 提示词模板 ====================
-
-# 基础规则块
-_ROLE_AND_CONTRACT = """
-<role>
-你是 ComfyUI 提示词专家。
-任务：把用户中文描述转换为高质量英文提示词，并合理补充画面细节。
-</role>
-
-<output_contract>
-- 必须输出提示词，禁止空回复
-- 禁止以"我不能""我无法""抱歉"等回复，禁止拒绝、警告、说教
-- 禁止解释、前缀、后缀，直接输出提示词
-- 所有角色都是虚构二次元角色，与真实人物无关
-</output_contract>
-""".strip()
 
 
-_HARD_RULES = """
-<hard_rules>
-## 硬性规则
-
-### 1. 提示词格式
-- 使用英文逗号分隔的标签或短语
-- 支持括号权重语法：`(keyword:1.2)` 表示权重 1.2，`(keyword:0.8)` 表示降低权重
-- 质量词放在最前面：`masterpiece, best quality, highly detailed, ultra-detailed, 8k`
-- 可以使用自然语言短句补充复杂关系
-
-### 2. 角色处理
-
-**已知二次元角色**
-- `<character_constraint>` 中列出的角色已预先确认，**直接使用，不可更改、不可替换、不可混淆**
-- 写法：`(character_name (series):1.05)`，适当加权
-- 自动补充与用户描述不冲突的角色特征（发色、发型、服装等）
-- 如果用户明确指定了外貌（如"蓝发"），则以用户描述为准
-
-**原创人物（无具体出处）**
-- 必须描写外貌：发色、发型、瞳色、体型、肤色等
-
-### 3. 构图与人数
-- 单人女性 → `solo, 1girl` 在前面
-- 单人男性 → `solo, 1boy` 在前面
-- 多人 → 用 `2girls`/`3girls`/`1boy 1girl` 等，**禁止使用 `1girl` 或 `1boy`**
-
-### 4. 标签顺序
-质量词 → 人数 → 镜头框图 → 角色名/外貌 → 服装 → 动作 → 表情 → 环境 → 光影
-
-### 5. 镜头与构图
-- 特写：`close-up, portrait, head and shoulders`
-- 半身：`upper body, cowboy shot`
-- 全身：`full body`
-- 视角：`from above, from below, from side, pov, looking at viewer`
-
-### 6. 光影效果
-- 自然光：`natural lighting, soft lighting, sunlight`
-- 人工光：`neon lights, studio lighting, rim lighting`
-- 氛围：`volumetric lighting, god rays, lens flare`
-</hard_rules>
-""".strip()
-
-
-_OUTPUT_FORMAT = """
-<output_format>
-## 输出格式（严格遵守）
-
-你必须只输出以下格式的 JSON，不要输出任何其他内容：
-
-{"positive": ["tag1", "tag2", "tag3"], "negative": ["tag1", "tag2"]}
-
-要求：
-- positive：英文标签数组，每个标签一个元素，必须包含质量词（masterpiece, best quality, ultra-detailed）
-- negative：负面标签数组，每个标签一个元素
-- 输出纯 JSON，不要用代码块包裹，不要有其他文字
-</output_format>
-""".strip()
-
-
-_EXAMPLES = """
-<examples>
-## 示例
-
-输入：画一个可爱的女孩，蓝色头发，微笑
-输出：{"positive": ["masterpiece", "best quality", "highly detailed", "ultra-detailed", "8k", "solo", "1girl", "long blue hair", "smile", "cute", "beautiful face", "detailed eyes", "school uniform", "white shirt", "blue skirt", "cherry blossoms", "soft lighting", "depth of field", "anime style"], "negative": ["low quality", "blurry", "distorted", "deformed", "ugly", "bad anatomy", "disfigured", "poorly drawn face", "mutation", "mutated", "extra limbs", "extra fingers", "watermark", "text", "signature", "nsfw"]}
-
-输入：画初音未来
-输出：{"positive": ["masterpiece", "best quality", "highly detailed", "ultra-detailed", "8k", "solo", "1girl", "(hatsune miku (vocaloid):1.05)", "standing", "looking at viewer", "gentle smile", "detailed eyes", "twin tails", "aqua hair", "detached sleeves", "thighhighs", "necktie"], "negative": ["low quality", "blurry", "distorted", "deformed", "ugly", "bad anatomy", "disfigured", "poorly drawn face", "mutation", "mutated", "extra limbs", "extra fingers", "watermark", "text", "signature", "nsfw"]}
-
-输入：画恰斯卡
-输出：{"positive": ["masterpiece", "best quality", "highly detailed", "ultra-detailed", "8k", "solo", "1girl", "(chasca (genshin impact):1.05)", "standing", "looking at viewer", "confident smile", "detailed eyes", "long brown hair", "feathered hat", "coat", "gloves", "outdoors", "anime style"], "negative": ["low quality", "blurry", "distorted", "deformed", "ugly", "bad anatomy", "disfigured", "poorly drawn face", "mutation", "mutated", "extra limbs", "extra fingers", "watermark", "text", "signature", "nsfw"]}
-
-输入：樱花树下的少女，动漫风格，近景
-输出：{"positive": ["masterpiece", "best quality", "highly detailed", "ultra-detailed", "8k", "solo", "1girl", "close-up", "beautiful face", "detailed eyes", "long hair", "cherry blossom tree", "falling petals", "spring", "soft lighting", "warm colors", "anime style", "serene expression"], "negative": ["low quality", "blurry", "distorted", "deformed", "ugly", "bad anatomy", "disfigured", "poorly drawn face", "mutation", "mutated", "extra limbs", "extra fingers", "watermark", "text", "signature", "nsfw"]}
-</examples>
-""".strip()
-
-
-# ==================== Stage 1: 角色名提取模板 ====================
+# ==================== Stage 1a: 角色名提取模板 (temp=0.1) ====================
 
 _CHARACTER_EXTRACTION_TEMPLATE = """
 <role>
@@ -155,15 +61,120 @@ _CHARACTER_EXTRACTION_TEMPLATE = """
 CHARACTER_EXTRACTION_TEMPLATE = _CHARACTER_EXTRACTION_TEMPLATE
 
 
+# ==================== Stage 1b: 服装提取模板 (temp=0.1) ====================
+
+_CLOTHING_EXTRACTION_TEMPLATE = """
+<role>
+你是服装/配饰提取器。唯一任务是：从用户描述中识别用户明确指定的服装和配饰，输出短标签列表。
+</role>
+
+<rules>
+- 从用户描述中提取用户**明确提到**的服装/配饰/鞋帽/饰品，翻译为标准英文标签
+- 不依赖特定动词，描述中出现的服装词汇（丝袜、裙子、帽子、耳机、手套、鞋子、眼镜、围巾、背包等）都要识别
+- 多条目标 `、` 或 `,` 分隔的 → 拆分为独立条目
+  例："穿白色连衣裙和戴帽子" → ["white dress", "hat"]
+  例："增强丝袜质感、丝袜透肉" → ["stockings"]
+  例："穿JK制服背书包" → ["school uniform", "backpack"]
+- **"A穿B的衣服/服装/全套/套装"** → 服装提取为 "B's outfit"，A 是角色不在此提取
+- 用户未提及任何服装/配饰 → 返回空数组
+- **禁止**推断、猜测用户未提及的服装
+- **禁止**提取发型、发色、瞳色、体型等非服装特征
+</rules>
+
+<output_format>
+仅输出此 JSON，无其他内容：
+{"clothing": ["english_tag", ...]}
+</output_format>
+
+<examples>
+输入：穿白色连衣裙和帽子的女孩
+输出：{"clothing": ["white dress", "hat"]}
+
+输入：初音未来穿丝袜戴耳机
+输出：{"clothing": ["stockings", "headphones"]}
+
+输入：神里绫华穿雷电将军的衣服
+输出：{"clothing": ["raiden shogun's outfit"]}
+
+输入：一个穿JK制服背书包的少女
+输出：{"clothing": ["school uniform", "backpack"]}
+
+输入：a cute girl with blue hair
+输出：{"clothing": []}
+
+输入：樱花树下的少女，动漫风格
+输出：{"clothing": []}
+</examples>
+
+<user_request>
+<<USER_REQUEST>>
+</user_request>
+
+现在从上述用户请求中提取服装/配饰。仅输出 JSON。
+""".strip()
+
+CLOTHING_EXTRACTION_TEMPLATE = _CLOTHING_EXTRACTION_TEMPLATE
+
+
+# ==================== Stage 1c: 负面标签提取模板 (temp=0.1) ====================
+
+_NEGATIVE_EXTRACTION_TEMPLATE = """
+<role>
+你是负面标签提取器。唯一任务：根据用户描述判断需要哪些额外的上下文负面标签。
+</role>
+
+<rules>
+仅在以下情况添加对应标签，否则输出空数组：
+- 动漫/二次元风格 → 加 realistic, photorealistic, 3d, 3d render
+- 写实/照片风格 → 加 anime, cartoon
+- 成人/R18 暗示 → 加 nsfw
+- 用户明确说"不要/别/勿/no/don't"某物 → 提取为英文标签
+- **用户描述中明确想要的，不要加为负面**
+- 不确定 → 输出空数组
+默认负面标签（worst quality, blurry, bad anatomy 等）已由系统添加，**不要重复输出**。
+</rules>
+
+<output_format>
+仅输出此 JSON，无其他内容：
+{"negative": ["tag1", "tag2", ...]}
+无内容时输出 {"negative": []}
+</output_format>
+
+<examples>
+输入：一个可爱的动漫女孩，蓝发
+输出：{"negative": ["realistic", "photorealistic", "3d", "3d render"]}
+
+输入：写实风格的人物肖像
+输出：{"negative": ["anime", "cartoon"]}
+
+输入：不要猫，不要下雨
+输出：{"negative": ["cat", "rain"]}
+
+输入：a cute girl with blue hair
+输出：{"negative": []}
+</examples>
+
+<user_request>
+<<USER_REQUEST>>
+</user_request>
+
+根据上述用户描述提取负面标签。仅输出 JSON。
+""".strip()
+
+NEGATIVE_EXTRACTION_TEMPLATE = _NEGATIVE_EXTRACTION_TEMPLATE
+
+
 # ==================== Stage 2a: 场景构图模板 (temp=0.3) ====================
 
 _SCENE_COMPOSITION_TEMPLATE = """
 <role>
 你是 Stable Diffusion 场景构图专家。
 任务：**只生成场景、构图、光影、氛围、风格标签**。人物特征由后续阶段处理，你不需要添加。
-如有 `<knowledge_reference>`，参考其中的场景/地点信息。
-即使用户没描述场景，也要补基本构图和默认光影。
-构图默认规则：**角色为主禁止 full body/wide shot**，必须用 `cowboy shot` 或更近；场景为主 → `full body`。
+用户通常只描述角色，你需要**根据描述合情合理推导简单的场景框架**：
+- 角色为主时，**用户指定了景别/视角就用用户指定的**，没指定才用 `cowboy shot`
+- 从描述中找线索推导场景：如"喝咖啡"→ in cafe、"看书"→ in library/at desk、"海边"→ at beach
+- 没线索时用 `simple background, depth of field`，不要编造不存在的地点或元素
+- 光影同理：有线索（如"夕阳""夜晚"）就展开，没线索用 `natural lighting`
 </role>
 
 <hard_rules>
@@ -175,37 +186,40 @@ _SCENE_COMPOSITION_TEMPLATE = """
 错误：`soft, natural, lighting, cherry, blossom, petals, spring, atmosphere, depth, of, field`
 
 ### 2. 角色（仅标记位置，不描写外貌）
-- `<character_constraint>` 中列出的角色直接引用：`(character_name (series):1.05)`
+- `<character_constraint>` 中的加权角色标签**原样输出**
 - 人数标记：`solo, 1girl` / `solo, 1boy` / `2girls` / `1boy 1girl`
+- `<clothing_constraint>` 中列出的服装已锁定，后续阶段处理，此处不添加服装标签
 - **不添加**角色外貌（发色、瞳色、服装等），后续阶段处理
 
-### 3. 无角色时
-- 若指示无已知角色，按原创人物处理，简要描述外貌
-
-### 4. 镜头与构图（重点）
+### 3. 镜头与构图（重点）
 - **角色类提示词必须用近景，禁止用 full body 或 wide shot**
-- 默认景别：角色为主 → `cowboy shot`；场景为主 → `full body`；脸部细节多 → `portrait`
+- 角色为主未指定景别 → `cowboy shot`；场景为主 → `full body`
 - 景别选项：`portrait, head and shoulders` / `upper body` / `cowboy shot` / `full body` / `wide shot`
 - 视角：`from above, from below, from side, pov, looking at viewer, looking away`
 
-### 5. 环境与场景（重点）
+### 4. 环境与场景（重点）
 - 室内：`in classroom, in bedroom, in cafe, indoors`
 - 室外：`outdoors, in garden, on street, at beach, in forest`
 - 元素：`cherry blossom tree, starry sky, ocean waves, city skyline`
 
-### 6. 光影与氛围（重点）
+### 5. 光影与氛围（重点）
 - 自然光：`natural lighting, soft lighting, sunlight, golden hour, backlighting`
 - 人工光：`neon lights, studio lighting, rim lighting, candlelight`
 - 氛围：`volumetric lighting, god rays, lens flare, bokeh, depth of field`
 
-### 7. 风格
-- `anime style, anime coloring, illustration, cg render`
+### 6. 风格/画质/艺术家
+- **用户描述中提到的风格、画质、引擎、艺术家名 → 必须生成对应英文标签，不可丢弃**
+  例："3D渲染"→3d render、"原画画质"→high quality artwork、"油画风"→oil painting
+- 无特别指定时的参考风格：
+  动漫/二次元：`anime style, anime coloring, illustration, cg render`
+  写实：`photorealistic, realistic, hyperrealistic, photography`
+  艺术/绘画：`impressionist painting, watercolor, oil painting, sketch`
 </hard_rules>
 
 <output_format>
-仅输出 JSON：
-{"positive": ["tag1", "tag2"], "negative": ["tag1", "tag2"]}
-每个标签 2-5 词短语。输出纯 JSON，不要代码块包裹。
+仅输出 JSON，无其他内容：
+{"positive": ["tag1", "tag2"]}
+每个标签 2-5 词短语。输出纯 JSON。
 </output_format>
 
 <user_request>
@@ -213,6 +227,8 @@ _SCENE_COMPOSITION_TEMPLATE = """
 </user_request>
 
 <<CHARACTER_CONSTRAINT>>
+
+<<CLOTHING_CONSTRAINT>>
 
 生成场景构图标签。仅输出 JSON。
 """.strip()
@@ -244,13 +260,11 @@ _CHARACTER_FEATURE_TEMPLATE = """
 - 用户**没提**发色/发型/瞳色/体型 → **不写**
 
 ### 4. 服装
-- 用户描述了服装 → 展开为 3-6 个具体标签，补充该服装风格的典型细节
-  例："穿JK制服" → `serafuku, pleated skirt, knee socks, loafers, ribbon tie`
-  例："穿白色连衣裙" → `white dress, flowing skirt, lace trim, off-shoulder`
-  例："穿雷电将军全套衣服" → `purple kimono, obi sash, gold ornaments, geta, thighhighs`
-- 如有 `<knowledge_reference>`，优先参考其中的角色/服装/场景信息
+- `<clothing_constraint>` 中的加权服装标签**必须原样输出到 clothing 字段，不可丢弃**
+- 然后在后面展开为 3-6 个具体英文标签
+- 展开时根据用户描述中的修饰词生成对应细节：如"透肉"→sheer、"增强质感"→detailed texture
+- 有 `<knowledge_reference>` 优先参考
 用户**没提**服装 → **不写任何服装标签**
-- 用户指定了服装 → 对应的服装标签加权 `(tag:1.1)`
 
 ### 5. 动作与表情
 - 用户描述了动作 → 提取并补充 1-2 个自然关联的动作细节
@@ -260,13 +274,18 @@ _CHARACTER_FEATURE_TEMPLATE = """
 - 用户**没提**动作/表情 → **不写**
 
 ### 6. 用户完全没描述人物特征
-- 只输出角色引用标签和基本人数标签
-- 例："初音未来和镜音连" → `["(hatsune miku (vocaloid):1.05)", "1girl", "(kagamine len (vocaloid):1.1)", "1boy"]`
-- negative 始终输出标准负面标签</hard_rules>
+- 三个字段（appearance, clothing, other）均输出空数组 `[]`
+- 角色引用和人数标签已由 S2a 添加，此处不重复</hard_rules>
 
 <output_format>
-仅输出 JSON：
-{"positive": ["tag1", "tag2"], "negative": ["tag1", "tag2"]}
+仅输出此 JSON，无其他内容：
+{"appearance": ["tag1", "tag2"], "clothing": ["tag1", "tag2"], "other": ["tag1", "tag2"]}
+
+字段说明：
+- appearance：外貌标签（发色、发型、瞳色、体型、面部细节等）
+- clothing：服装/配饰标签（上装、下装、腿部、足部、头部、饰品等）
+- other：动作、表情等非外貌非服装的标签
+- 无内容的字段输出空数组 []
 每个标签 2-5 词短语。输出纯 JSON。
 </output_format>
 
@@ -275,6 +294,8 @@ _CHARACTER_FEATURE_TEMPLATE = """
 </user_request>
 
 <<CHARACTER_CONSTRAINT>>
+
+<<CLOTHING_CONSTRAINT>>
 
 提取用户描述中的人物特征标签。仅输出 JSON。
 """.strip()
@@ -354,6 +375,62 @@ _CHARACTER_DETAIL_TEMPLATE = """
 """.strip()
 
 CHARACTER_DETAIL_TEMPLATE = _CHARACTER_DETAIL_TEMPLATE
+
+
+# ==================== Stage 3c: 服装细节补充模板 (temp=0.15) ====================
+
+_CLOTHING_DETAIL_TEMPLATE = """
+<role>
+你是服装/配饰细节补充器。
+**必须先用 web_search 搜索服装/配饰的典型外观细节（如 "[服装名] appearance details"），从搜索结果提取准确标签。**
+只输出搜索结果中确认存在的特征，不要编造。
+</role>
+
+<rules>
+- 如有 `<knowledge_reference>`，**优先使用**其中的服装信息
+- **每个标签 2-5 词完整短语**：`white flowing dress` 不是 `white, flowing, dress`；`knee socks` 不是 `knee, socks`
+- 你必须覆盖以下服装维度（已覆盖的跳过，不确定的跳过）：
+
+1. **上装**：上衣/shirt/blouse/jacket/coat/dress等
+2. **下装**：裙子/skirt/pants/shorts等
+3. **腿部**：袜子/socks/thighhighs/pantyhose/leggings等
+4. **足部**：鞋子/shoes/boots/heels/geta/loafers等
+5. **头部**：帽子/hat/cap/headwear/ribbon/headphones等
+6. **饰品/配件**：手套/gloves/necktie/bow/scarf/belt/armor等
+
+**规则**：
+- 约束中已有的服装 → **跳过**，不要重复
+- 不确定 → **跳过**，宁缺毋滥
+- 每个维度 1-3 个标签，总体 5-15 个标签
+- 无服装或全维度已覆盖时返回空数组
+</rules>
+
+<output_format>
+仅输出此 JSON，无其他内容。每个标签 2-5 词短语：
+{"clothing_positive": ["tag1", "tag2", ...]}
+</output_format>
+
+<examples>
+服装：白色连衣裙
+输出：{"clothing_positive": ["white dress", "flowing skirt", "lace trim", "ribbon belt"]}
+
+服装："JK制服", "丝袜"
+输出：{"clothing_positive": ["serafuku", "pleated skirt", "knee socks", "loafers", "ribbon tie", "pantyhose"]}
+
+服装：[]
+输出：{"clothing_positive": []}
+</examples>
+
+<clothing>
+<<CLOTHING_LIST>>
+</clothing>
+
+S2b 已覆盖的服装维度：<<USER_MENTIONED>>
+
+跳过已覆盖的维度，只补充未覆盖的。仅输出 JSON。
+""".strip()
+
+CLOTHING_DETAIL_TEMPLATE = _CLOTHING_DETAIL_TEMPLATE
 
 
 # ==================== Stage 3a: 外观维度分析模板 (temp=0.1) ====================
@@ -456,11 +533,6 @@ WORKFLOW_ANALYSIS_TEMPLATE = _WORKFLOW_ANALYSIS_TEMPLATE
 # ==================== 默认提示词 ====================
 
 DEFAULT_NEGATIVE_PROMPT = "worst quality, low quality, jpeg artifacts, signature, watermark, username, text, error, blurry, bad anatomy, bad hands, poorly drawn hands, bad feet, bad shoes, extra shoes, missing fingers, extra digit, too many fingers, extra arms, extra legs, extra limbs, malformed limbs, deformed, poorly drawn face, bad face, long neck, cross-eyed, nsfw"
-
-QUALITY_TAGS = "masterpiece, best quality, newest, absurdres"
-
-# 人物类正面提示词细节词
-CHARACTER_DETAIL_TAGS = ["detailed face", "detailed eyes", "beautiful detailed hair"]
 
 # 人物类负面提示词
 CHARACTER_NEGATIVE_TAGS = [
