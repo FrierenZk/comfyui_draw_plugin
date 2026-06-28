@@ -268,8 +268,12 @@ class ComfyUIDrawGenerator(LLMClientMixin, StagesMixin):
         return prompt_id
 
     async def _wait_for_completion(self, prompt_id: str) -> None:
-        for i in range(60):
+        timeout = self.inv._get_config("comfyui", "generation_timeout", 300)
+        max_loops = timeout // 5 if timeout > 0 else None
+        i = 0
+        while max_loops is None or i < max_loops:
             await asyncio.sleep(5)
+            i += 1
 
             result = await self.inv.call_tool("get_job_status", {"prompt_id": prompt_id})
             if result:
@@ -282,8 +286,10 @@ class ComfyUIDrawGenerator(LLMClientMixin, StagesMixin):
                         f"prompt_id={prompt_id}, error={data.get('error')}"
                     )
 
-            self.inv._debug_log(f"等待中... {(i + 1) * 5}秒")
+            self.inv._debug_log(f"等待中... {i * 5}秒")
 
+        self.inv._debug_log(f"生图超时，取消任务: {prompt_id}")
+        await self.inv.call_tool("cancel_job", {"prompt_id": prompt_id})
         raise GenerationTimeoutError(f"prompt_id={prompt_id}")
 
     async def _retrieve_image(self, prompt_id: str) -> str:

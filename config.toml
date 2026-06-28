@@ -19,6 +19,8 @@ debug_log = false
 host = "127.0.0.1"
 # ComfyUI 服务端口
 port = 8188
+# 生图超时秒数
+generation_timeout = 300
 # 默认工作流文件名
 workflow_file = "麦麦工作流.json"
 # 备选工作流（默认失败时逐一尝试）

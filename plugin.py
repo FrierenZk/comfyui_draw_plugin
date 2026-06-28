@@ -90,6 +90,7 @@ class ComfyUISection(PluginConfigBase):
         default="麦麦工作流.json",
         description="工作流文件名"
     )
+    generation_timeout: int = Field(default=300, description="生图超时秒数（每5秒轮询一次）")
     optional_workflows: list[str] = Field(
         default_factory=list,
         description="备选工作流文件"
