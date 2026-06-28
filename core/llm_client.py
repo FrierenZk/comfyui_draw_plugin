@@ -193,17 +193,14 @@ class LLMClientMixin:
             f"Search and list key appearance facts for: {', '.join(characters)}. Reply with bullet points only.",
         )
 
-    async def _fetch_clothing_info(self, task_name: str, description: str, characters: list[str]) -> str:
-        """提取并预搜索服装信息（分级过期缓存）。"""
-        refs = re.findall(r"穿(.+?)(?:的(?:衣服|服装|全套|套装|服饰))?", description)
-        refs += re.findall(r"穿(.+?)$", description)
-        refs = [r.strip() for r in refs if r.strip() and r.strip() not in characters]
-        if not refs:
+    async def _fetch_clothing_info(self, task_name: str, clothing: list[str]) -> str:
+        """预搜索服装信息（分级过期缓存）。clothing 为 S1 LLM 提取的服装标签列表。"""
+        if not clothing:
             return ""
-        cache_key = ",".join(sorted(r.lower() for r in refs))
+        cache_key = ",".join(sorted(c.lower() for c in clothing))
         return await self._cached_search(
             task_name, cache_key, self._CLOTH_CACHE_FILE,
-            f"Search and describe the appearance of: {', '.join(refs)}. Reply with bullet points only.",
+            f"Search and describe the appearance of: {', '.join(clothing)}. Reply with bullet points only.",
         )
 
     async def _cached_search(
