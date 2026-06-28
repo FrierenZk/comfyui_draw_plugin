@@ -60,7 +60,7 @@ class ComfyUIDrawGenerator(LLMClientMixin, StagesMixin):
         """生成图片主流程（LLM 翻译描述 → 提示词）。"""
         try:
             await self.inv.connect()
-            workflow = await self._load_workflow()
+            workflow = await self._load_workflow(stream_id)
 
             positive, negative = await self._generate_prompts_with_llm(description)
             self.inv._debug_log(f"正面提示词: {positive[:100]}")
@@ -73,7 +73,7 @@ class ComfyUIDrawGenerator(LLMClientMixin, StagesMixin):
                 f"【负面提示词】\n{negative}",
             )
 
-            prompt_id = await self._enqueue_job(workflow, positive, negative)
+            prompt_id = await self._enqueue_job(stream_id, workflow, positive, negative)
             await self._wait_for_completion(prompt_id)
             image_base64 = await self._retrieve_image(prompt_id)
 
@@ -113,7 +113,7 @@ class ComfyUIDrawGenerator(LLMClientMixin, StagesMixin):
         """直接使用提示词生成图片（跳过 LLM）。"""
         try:
             await self.inv.connect()
-            workflow = await self._load_workflow()
+            workflow = await self._load_workflow(stream_id)
 
             positive, negative = self._process_direct_prompts(positive_prompt, negative_prompt)
             self.inv._debug_log(f"正面提示词: {positive[:100]}")
@@ -121,7 +121,7 @@ class ComfyUIDrawGenerator(LLMClientMixin, StagesMixin):
 
             await self.inv._send_message(stream_id, "正在生成图片，请稍候...")
 
-            prompt_id = await self._enqueue_job(workflow, positive, negative)
+            prompt_id = await self._enqueue_job(stream_id, workflow, positive, negative)
             await self._wait_for_completion(prompt_id)
             image_base64 = await self._retrieve_image(prompt_id)
 
@@ -154,8 +154,7 @@ class ComfyUIDrawGenerator(LLMClientMixin, StagesMixin):
 
     # ── 流程步骤 ──────────────────────────────────────────
 
-    async def _load_workflow(self) -> dict:
-        stream_id = getattr(self.inv, "_stream_id", "")
+    async def _load_workflow(self, stream_id: str) -> dict:
         workflow_file = self.inv.plugin._get_stream_workflow(stream_id) if stream_id else self.inv._get_config("comfyui", "workflow_file", "麦麦工作流.json")
         if not workflow_file.endswith(".json"):
             workflow_file += ".json"
@@ -257,8 +256,7 @@ class ComfyUIDrawGenerator(LLMClientMixin, StagesMixin):
 
         return None, None
 
-    async def _enqueue_job(self, workflow: dict, positive: str, negative: str) -> str:
-        stream_id = getattr(self.inv, "_stream_id", "")
+    async def _enqueue_job(self, stream_id: str, workflow: dict, positive: str, negative: str) -> str:
         workflow_file = self.inv.plugin._get_stream_workflow(stream_id) if stream_id else self.inv._get_config("comfyui", "workflow_file", "麦麦工作流.json")
         if not workflow_file.endswith(".json"):
             workflow_file += ".json"

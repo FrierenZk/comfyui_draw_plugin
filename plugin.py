@@ -209,7 +209,6 @@ class ComfyUIDrawPlugin(MaiBotPlugin):
     async def _run_draw(self, stream_id: str, positive: str, negative: str, direct: bool):
         """在独立 task 中执行图片生成"""
         invocation = ComfyUIDrawInvocation(self)
-        invocation._stream_id = stream_id  # 传递 stream_id 用于读取工作流
         try:
             if direct:
                 await invocation.generate_image_with_prompts(stream_id, positive, negative)
