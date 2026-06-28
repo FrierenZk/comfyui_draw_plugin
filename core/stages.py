@@ -391,8 +391,8 @@ class StagesMixin:
         neg_list = self.inv._ensure_negative_tags(pos_list, neg_list)
 
         # 清理转义字符 + 二次去重 + 统计
-        pos_list = [t.replace("\(", "(").replace("\)", ")") for t in pos_list]
-        neg_list = [t.replace("\(", "(").replace("\)", ")") for t in neg_list]
+        pos_list = [t.replace("\\(", "(").replace("\\)", ")") for t in pos_list]
+        neg_list = [t.replace("\\(", "(").replace("\\)", ")") for t in neg_list]
         pos_list = list(dict.fromkeys(pos_list))
         neg_list = list(dict.fromkeys(neg_list))
         self.inv._debug_log(f"终: pos={len(pos_list)} tags, neg={len(neg_list)} tags")

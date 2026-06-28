@@ -156,12 +156,21 @@ class ComfyUIDrawGenerator(LLMClientMixin, StagesMixin):
 
     async def _load_workflow(self) -> dict:
         workflow_file = getattr(self.inv.plugin, "_current_workflow", "") or self.inv._get_config("comfyui", "workflow_file", "麦麦工作流.json")
+        if not workflow_file.endswith(".json"):
+            workflow_file += ".json"
         result = await self.inv.call_tool("get_workflow", {
             "filename": workflow_file,
             "format": "api",
         })
         if not result:
             raise WorkflowLoadError(f"获取工作流失败: workflow_file={workflow_file}")
+
+        # 检查 MCP 工具是否返回错误
+        if hasattr(result, "isError") and result.isError:
+            err = ""
+            if hasattr(result, "content") and result.content:
+                err = result.content[0].text if hasattr(result.content[0], "text") else str(result.content[0])
+            raise WorkflowLoadError(f"ComfyUI 返回错误: {err or '未知'}")
 
         workflow = self.inv._parse_tool_result(result)
         if not workflow:
@@ -248,7 +257,9 @@ class ComfyUIDrawGenerator(LLMClientMixin, StagesMixin):
         return None, None
 
     async def _enqueue_job(self, workflow: dict, positive: str, negative: str) -> str:
-        workflow_file = self.inv._get_config("comfyui", "workflow_file", "麦麦工作流.json")
+        workflow_file = getattr(self.inv.plugin, "_current_workflow", "") or self.inv._get_config("comfyui", "workflow_file", "麦麦工作流.json")
+        if not workflow_file.endswith(".json"):
+            workflow_file += ".json"
         model_name = self.inv._get_config("llm", "model_name", "")
         task_name = self._resolve_task_name(model_name) or model_name
         pos_node, neg_node = await self._resolve_prompt_nodes(
