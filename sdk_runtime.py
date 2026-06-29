@@ -241,7 +241,7 @@ class ComfyUIDrawInvocation:
         """确保标签列表包含必要的质量词和细节词"""
         required = ["masterpiece", "best quality", "ultra-detailed"]
         tags_lower = [t.lower() for t in tags]
-        for tag in required:
+        for tag in reversed(required):
             if tag not in tags_lower:
                 tags.insert(0, tag)
 

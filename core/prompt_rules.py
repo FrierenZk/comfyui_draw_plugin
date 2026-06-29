@@ -178,12 +178,11 @@ _SCENE_COMPOSITION_TEMPLATE = """
 </role>
 
 <hard_rules>
-### 1. 提示词格式 — 每个标签都是 2-5 词短语！
-**把形容词+名词组合成短语，不要拆成单字。**
-单字标签仅允许：计数（1girl, solo）、质量词（masterpiece）、风格（anime）。
-
-正确：`soft natural lighting, cherry blossom petals, spring atmosphere, depth of field`
-错误：`soft, natural, lighting, cherry, blossom, petals, spring, atmosphere, depth, of, field`
+### 1. 提示词格式 — 每个标签 2-5 词
+**同物属性合并，过长即拆。不要把多个标签拼成一个数组元素。**
+正确：`["solo", "1girl", "(name:1.05)"]`（独立元素）
+正确：`soft natural lighting, cherry blossom petals, depth of field`
+错误：`"solo, 1girl, (name:1.05)"`（多标签拼成单个元素）
 
 ### 2. 角色（仅标记位置，不描写外貌）
 - `<character_constraint>` 中的加权角色标签**原样输出**
@@ -241,33 +240,39 @@ SCENE_COMPOSITION_TEMPLATE = _SCENE_COMPOSITION_TEMPLATE
 _CHARACTER_FEATURE_TEMPLATE = """
 <role>
 你是角色人物特征提取器。
-任务：**根据用户描述生成人物外貌、服装、动作、表情标签**。场景和光影不归你管。
+任务：**以 `<user_request>` 中的用户描述为准**生成外貌、服装、动作、表情标签。场景和光影不归你管。
+使用 `<search_info>` 的规则：
+- 基础属性（颜色、材质、款式）取自 search_info，用户描述覆盖或叠加在上，**不可丢弃 search_info 中的基础属性**
+  例：search_info 有 "white stockings"，用户说 "丝袜透肉" → "white sheer stockings"（white 来自 info，sheer 来自用户）
+  例：search_info 有 "blue twin tails"，用户说 "红发" → "red twin tails"（red 覆盖 blue）
+- **search_info 中有但用户未提及的特征绝对不写**，留给后续阶段处理
 多人场景：每个角色的特征紧跟该角色引用，形成"角色→特征簇"，不要混在一起。
 </role>
 
 <hard_rules>
-### 1. 提示词格式 — 每个标签都是 2-5 词短语！
-正确：`long blue hair, white sailor uniform, red pleated skirt, gentle smile, waving hand`
-错误：`long, blue, hair, white, sailor, uniform, red, pleated, skirt, gentle, smile, waving, hand`
+### 1. 提示词格式 — 每个标签 2-5 词最佳
+同一物体属性合并，不同物体各自成标签。
+合并前：`white stockings, sheer stockings` → 合并后：`white sheer stockings`
+拆分前：`white sailor uniform with gold trim` → 拆分后：`white sailor uniform, gold trim collar`
+错误：`white, sailor, uniform`（单字拆分丢失语义）
 
 ### 2. 角色引用与人数
 - 角色名和人数标签（1girl, solo, 2girls 等）已由 S2a 添加，**不要重复输出**
 
 ### 3. 人物外貌
-- 用户描述了发色/发型 → 提取并适当补充 1-2 个相关细节
+- 用户描述了发色/发型 → 提取并适当补充相关细节
   例："蓝发" → `long blue hair, flowing hair` 或 `short blue hair, bob cut`
 - 用户描述了瞳色 → 提取
 - 用户**没提**发色/发型/瞳色/体型 → **不写**
 
 ### 4. 服装
 - `<clothing_constraint>` 中的加权服装标签**必须原样输出到 clothing 字段，不可丢弃**
-- 然后在后面展开为 3-6 个具体英文标签
+- 然后在后面展开为具体英文标签（简单服饰 1-2 个词即可，复杂套装可多写）
 - 展开时根据用户描述中的修饰词生成对应细节：如"透肉"→sheer、"增强质感"→detailed texture
-- 有 `<knowledge_reference>` 优先参考
 用户**没提**服装 → **不写任何服装标签**
 
 ### 5. 动作与表情
-- 用户描述了动作 → 提取并补充 1-2 个自然关联的动作细节
+- 用户描述了动作 → 提取并适当补充自然关联的动作细节
   例："跳舞" → `dancing, flowing dress, dynamic pose, graceful movement`
   例："挥手" → `waving hand, looking at viewer, cheerful smile`
 - 用户描述了表情 → 提取
@@ -297,6 +302,8 @@ _CHARACTER_FEATURE_TEMPLATE = """
 
 <<CLOTHING_CONSTRAINT>>
 
+<<SEARCH_INFO>>
+
 提取用户描述中的人物特征标签。仅输出 JSON。
 """.strip()
 
@@ -314,7 +321,7 @@ _CHARACTER_DETAIL_TEMPLATE = """
 
 <rules>
 - 如有 `<knowledge_reference>`，**优先使用**其中的角色外观信息，不要用训练数据猜测
-- **每个标签 2-5 词完整短语**：`long blue hair` 不是 `long, blue, hair`；`white sailor uniform` 不是 `white, sailor, uniform`
+- **每个标签 2-5 词**，同物属性合并，过长即拆：`white sheer stockings` 不是 `white stockings, sheer stockings`
 - 你必须覆盖以下每个维度（已覆盖的跳过，不确定的跳过）：
 
 1. **体型**：身高、体型（slender/petite/curvy/tall等）
@@ -336,7 +343,6 @@ _CHARACTER_DETAIL_TEMPLATE = """
 - 用户已经描述的特征 → **跳过**，不要重复
 - 用户指定了角色服装（如"穿B的衣服"、"穿白色连衣裙"）→ 服装维度按用户指定的方向补充，**不要**用该角色的默认服装
 - 不确定 → **跳过**，宁缺毋滥
-- 每个维度 1-3 个标签，总体 15-30 个标签
 - 无角色或全维度已覆盖时返回空数组
 </rules>
 
@@ -388,7 +394,7 @@ _CLOTHING_DETAIL_TEMPLATE = """
 
 <rules>
 - 如有 `<knowledge_reference>`，**优先使用**其中的服装信息
-- **每个标签 2-5 词完整短语**：`white flowing dress` 不是 `white, flowing, dress`；`knee socks` 不是 `knee, socks`
+- **每个标签 2-5 词**，同物属性合并，过长即拆：`white sheer stockings` 不是 `white stockings, sheer stockings`
 - 你必须覆盖以下服装维度（已覆盖的跳过，不确定的跳过）：
 
 1. **上装**：上衣/shirt/blouse/jacket/coat/dress等
@@ -401,7 +407,6 @@ _CLOTHING_DETAIL_TEMPLATE = """
 **规则**：
 - 约束中已有的服装 → **跳过**，不要重复
 - 不确定 → **跳过**，宁缺毋滥
-- 每个维度 1-3 个标签，总体 5-15 个标签
 - 无服装或全维度已覆盖时返回空数组
 </rules>
 
@@ -595,13 +600,16 @@ def merge_person_tags(tags: list) -> list:
     # 移除所有 1girl 和 1boy
     filtered = [t for t in tags if t.strip().lower() not in ("1girl", "1boy")]
 
-    # 根据数量添加正确的标签
-    if girl_count > 0:
-        tag = "1girl" if girl_count == 1 else f"{girl_count}girls"
-        filtered.insert(0, tag)
+    # 人数标签插在质量词之后
+    _QUALITY_COUNT = 3
+    insert_pos = min(_QUALITY_COUNT, len(filtered))
     if boy_count > 0:
         tag = "1boy" if boy_count == 1 else f"{boy_count}boys"
-        filtered.insert(0, tag)
+        filtered.insert(insert_pos, tag)
+        insert_pos += 1
+    if girl_count > 0:
+        tag = "1girl" if girl_count == 1 else f"{girl_count}girls"
+        filtered.insert(insert_pos, tag)
 
     return filtered
 

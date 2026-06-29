@@ -98,6 +98,8 @@ class StagesMixin:
                 cloth_info = p2_results[idx] or ""; idx += 1
             if s2a_task:
                 pos_list, _ = p2_results[idx]; idx += 1
+                from .prompt_rules import split_prompt_tags as _split
+                pos_list = sum((_split(t) for t in pos_list), [])
             extra_info = "\n\n".join(s for s in (char_info, cloth_info) if s)
             self.inv._debug_log(
                 f"预搜索: 角色={len(char_info)}chars 服装={len(cloth_info)}chars | "
@@ -107,10 +109,11 @@ class StagesMixin:
             )
 
             # ═══ Phase 3: S2b 人物特征 ═══
+            search_info = f"<search_info>\n{extra_info}\n</search_info>" if extra_info else ""
             appearance, clothing_s2b, other = await self._generate_character_features(
-                task_name, f"{description}\n\n<search_info>\n{extra_info}\n</search_info>" if extra_info else description,
-                characters, s2_max_tokens, with_search=0, clothing=clothing,
+                task_name, description, characters, s2_max_tokens, with_search=0, clothing=clothing,
                 weighted_clothing=weighted_clothing, weighted_chars=weighted_chars,
+                search_info=search_info,
             )
             self.inv._debug_log(f"Stage2b 外貌={len(appearance)} 服装={len(clothing_s2b)} 其他={len(other)}")
 
@@ -118,10 +121,10 @@ class StagesMixin:
             covered_dims = ""
             char_details = []
             cloth_tags = []
-            if characters or clothing:
-                # S3a 先跑：分析 S2b 已覆盖的 12 个维度（含 6 个服装维度）
+            s2b_all = appearance + clothing_s2b + other
+            if s2b_all or clothing:
+                # S3a: 分析 S2b 已覆盖的 12 个维度
                 s3_context = f"用户描述: {description}"
-                s2b_all = appearance + clothing_s2b + other
                 if s2b_all:
                     s3_context += f"\nStage2b 已生成: {', '.join(s2b_all)}"
                 covered_dims = await self._analyze_appearance(task_name, s3_context)
@@ -325,6 +328,7 @@ class StagesMixin:
         clothing: list[str] = None,
         weighted_clothing: list[str] = None,
         weighted_chars: list[str] = None,
+        search_info: str = "",
     ) -> tuple[list[str], list[str], list[str]]:
         """低温度提取人物外貌、服装、动作/表情，返回 (appearance, clothing, other)。"""
         wchars = weighted_chars or [f"({c}:1.05)" for c in characters]
@@ -353,6 +357,7 @@ class StagesMixin:
         prompt = CHARACTER_FEATURE_TEMPLATE
         prompt = prompt.replace("<<CHARACTER_CONSTRAINT>>", constraint)
         prompt = prompt.replace("<<CLOTHING_CONSTRAINT>>", cloth_constraint)
+        prompt = prompt.replace("<<SEARCH_INFO>>", search_info or "")
         prompt = prompt.replace("<<USER_REQUEST>>", description)
         if knowledge:
             prompt = prompt.replace(
@@ -475,8 +480,12 @@ class StagesMixin:
         tags_cache = self._load_json_cache(self._TAGS_CACHE_FILE)
         entry = tags_cache.get(cache_key)
         if entry and now - entry.get("ts", 0) < entry.get("ttl", 3) * 86400:
-            self.inv._debug_log(f"标签缓存命中({entry.get('ttl')}天): {cache_key[:60]}")
-            return entry["data"]
+            cached = entry["data"]
+            if not cached:
+                self.inv._debug_log(f"跳过空标签缓存({entry.get('ttl')}天): {cache_key[:60]}")
+            else:
+                self.inv._debug_log(f"标签缓存命中({entry.get('ttl')}天): {cache_key[:60]}")
+                return cached
 
         # Layer 2: 语言描述缓存（跳过 web_search，仍需 LLM）
         if not extra_info:
@@ -495,7 +504,7 @@ class StagesMixin:
                 old_tier = self._TAGS_CACHE_TIERS.index(entry.get("ttl", 3))
                 new_ttl = self._TAGS_CACHE_TIERS[min(old_tier + 1, 3)] if overlap > 0.5 else 3
             # 仅 Anthropic 路径且未截断才写标签缓存
-            if self.inv._get_config("llm", "use_anthropic_api", False) and not getattr(self, "_last_truncated", False):
+            if self.inv._get_config("llm", "use_anthropic_api", False) and not getattr(self, "_last_truncated", False) and len(tags) >= 3:
                 tags_cache[cache_key] = {"data": tags, "ts": now, "ttl": new_ttl}
                 self._save_json_cache(self._TAGS_CACHE_FILE, tags_cache)
         return tags
@@ -522,8 +531,12 @@ class StagesMixin:
         tags_cache = self._load_json_cache(self._CLOTH_TAGS_CACHE_FILE)
         entry = tags_cache.get(cache_key)
         if entry and now - entry.get("ts", 0) < entry.get("ttl", 3) * 86400:
-            self.inv._debug_log(f"服装标签缓存命中({entry.get('ttl')}天): {cache_key[:60]}")
-            return entry["data"]
+            cached = entry["data"]
+            if not cached:
+                self.inv._debug_log(f"跳过空服装标签缓存({entry.get('ttl')}天): {cache_key[:60]}")
+            else:
+                self.inv._debug_log(f"服装标签缓存命中({entry.get('ttl')}天): {cache_key[:60]}")
+                return cached
 
         # Layer 2: 语言描述缓存（跳过 web_search，仍需 LLM）
         if not extra_info:
@@ -618,13 +631,18 @@ class StagesMixin:
         wc = weighted_chars or []
         wcl = weighted_clothing or []
 
-        # 锚点
-        anchor = next((i for i, t in enumerate(pos_list) if ":" in t and "(" in t), 4)
+        # 锚点：角色引用含括号即命中
+        anchor = next((i for i, t in enumerate(pos_list) if "(" in t), -1)
+        if anchor < 0:
+            anchor = 4
 
         # S2a 剩余标签（构图/环境/光影/风格）
         s2a_tail = pos_list[anchor + 1:]
 
-        # 加权角色在角色区块前，加权服装在服装区块前
+        # 检测 S2a/S2b 是否已输出加权标签，避免重复注入
+        wc = [w for w in wc if w not in pos_list]
+        wcl = [w for w in wcl if w not in clt]
+
         after = wc + app + chd + wcl + clt + ctg + oth
 
         result = pos_list[:anchor + 1] + after + s2a_tail
