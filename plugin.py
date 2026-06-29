@@ -145,6 +145,39 @@ class ComfyUIDrawPlugin(MaiBotPlugin):
             f"ComfyUI 麦麦工作流绘图插件已加载, command_name=/{cmd}, default_workflow={self._default_workflow}"
         )
 
+        # Anthropic SDK 自动安装 — 在插件加载阶段完成，不拖到会话里
+        if self.get_config_value("llm", "use_anthropic_api", False):
+            await self._ensure_anthropic()
+
+    async def _ensure_anthropic(self) -> None:
+        """确保 anthropic SDK 已安装。加载时调用，不在会话中触发 pip。"""
+        import sys as _sys
+
+        try:
+            from anthropic import AsyncAnthropic  # noqa: F401
+            self.ctx.logger.debug("Anthropic SDK 已就绪")
+            return
+        except ImportError:
+            pass
+
+        self.ctx.logger.info("正在自动安装 Anthropic SDK...")
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                _sys.executable, "-m", "pip", "install", "anthropic",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+            if proc.returncode == 0:
+                self.ctx.logger.info("Anthropic SDK 安装成功")
+            else:
+                err_msg = stderr.decode(errors="replace").strip().split("\n")[-1] if stderr else "unknown"
+                self.ctx.logger.error(
+                    f"Anthropic SDK 安装失败 (pip exit={proc.returncode}): {err_msg}"
+                )
+        except Exception as e:
+            self.ctx.logger.error(f"Anthropic SDK 安装异常 ({type(e).__name__}): {e}")
+
     async def on_unload(self) -> None:
         """插件卸载时清理"""
         self.invocation = None

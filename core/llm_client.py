@@ -63,15 +63,91 @@ class LLMClientMixin:
         self.logger.error("LLM 格式校验失败，已重试 3 次，终止任务")
         return False, ""
 
+    # ── Anthropic 直连 ─────────────────────────────────────
+
+    async def _anthropic_call(
+        self, api_key: str, base_url: str, model: str,
+        prompt: str, max_tokens: int, with_search: int,
+        restored: dict,
+    ) -> str | None:
+        """Anthropic SDK 直连，成功返回文本，失败返回 None。"""
+        import traceback as _tb
+
+        try:
+            from anthropic import AsyncAnthropic
+        except ImportError as e:
+            self.inv._debug_log(f"Anthropic SDK 未安装 ({e})，回退旧 API")
+            return None
+
+        try:
+            self._last_truncated = False
+            tools_arg = [{"type": "web_search_20260209", "name": "web_search", "max_uses": with_search}] if with_search > 0 else None
+            t0 = time.monotonic()
+            client = AsyncAnthropic(api_key=api_key, base_url=base_url)
+            kwargs = dict(model=model, max_tokens=max_tokens,
+                          messages=[{"role": "user", "content": prompt}],
+                          system="Output ONLY the requested JSON format, no markdown, no explanations. Search only for specific, essential facts. Do not broad-search.",
+                          thinking={"type": "enabled" if with_search > 0 else "disabled"})
+            if tools_arg:
+                kwargs["tools"] = tools_arg
+            self.inv._debug_log(f"Anthropic 发起请求: max_tokens={max_tokens} search={with_search}")
+            response = await client.messages.create(**kwargs)
+            await client.close()
+
+            elapsed = time.monotonic() - t0
+            usage = getattr(response, "usage", None)
+            if usage:
+                out_tk = getattr(usage, "output_tokens", 0)
+                self.inv._debug_log(
+                    f"LLM token: in={getattr(usage, 'input_tokens', '?')} "
+                    f"out={out_tk} "
+                    f"cache_read={getattr(usage, 'cache_read_input_tokens', 0)} "
+                    f"耗时={elapsed:.1f}s"
+                )
+                self._last_truncated = out_tk >= max_tokens
+                if self._last_truncated:
+                    self.logger.warning(
+                        f"LLM 输出截断! out={out_tk} >= max={max_tokens}，考虑调高对应 max_tokens 配置"
+                    )
+
+            block_types = [getattr(b, "type", "?") for b in response.content]
+            self.inv._debug_log(f"LLM blocks: {block_types}")
+
+            text = " ".join(
+                b.text for b in response.content
+                if hasattr(b, "text") and b.text
+            )
+            self.inv._debug_log(f"LLM 原生响应: {text[:200]}")
+            return text
+        except Exception as e:
+            tb_lines = _tb.format_exception_only(type(e), e)
+            tb_short = "".join(tb_lines).strip().split("\n")[-1] if tb_lines else str(e)
+            self.inv._debug_log(
+                f"Anthropic 直连失败，回退旧 API | "
+                f"type={type(e).__name__} "
+                f"msg={str(e)[:200]} "
+                f"tb={tb_short[:300]}"
+            )
+            return None
+        finally:
+            for k, v in restored.items():
+                if v is None:
+                    del os.environ[k]
+                else:
+                    os.environ[k] = v
+            restored.clear()
+
+    # ── 主调用入口 ─────────────────────────────────────────
+
     async def _llm_generate_once(
         self, task_name: str, prompt: str, temperature: float, max_tokens: int,
         with_search: int = 0,
     ) -> str:
-        """Anthropic SDK 直连调用。with_search=N 表示最多 N 次搜索（0=不搜索）。"""
+        """Anthropic 直连 → 旧 API 回退。with_search=N 表示最多 N 次搜索（0=不搜索）。"""
         base_url = self.inv._get_config("llm", "anthropic_base_url", "https://api.deepseek.com/anthropic")
         model = self.inv._get_config("llm", "model_name", "deepseek-v4-pro")
 
-        # 注入 env 条目到 os.environ，调用后恢复
+        # 注入 env 条目到 os.environ，调用后恢复（由 _anthropic_call 的 finally 负责）
         restored = {}
         for entry in self.inv._get_config("llm", "anthropic_env", []):
             if isinstance(entry, str) and "=" in entry:
@@ -82,64 +158,24 @@ class LLMClientMixin:
                     os.environ.setdefault(k, v)
 
         api_key = self.inv._get_config("llm", "anthropic_api_key", "") or os.environ.get("ANTHROPIC_API_KEY", "")
-        use_anthropic = self.inv._get_config("llm", "use_anthropic_api", True) and bool(api_key)
-        self.inv._debug_log(f"LLM 路径: {'Anthropic直连' if use_anthropic else 'MaiBot旧API'}")
+        use_anthropic_cfg = self.inv._get_config("llm", "use_anthropic_api", True)
+        use_anthropic = use_anthropic_cfg and bool(api_key)
+
+        self.inv._debug_log(
+            f"LLM 路由决策: use_cfg={use_anthropic_cfg} "
+            f"has_key={'***' if api_key else 'False'} "
+            f"base_url={base_url} "
+            f"model={model} "
+            f"-> {'Anthropic直连' if use_anthropic else 'MaiBot旧API'}"
+        )
 
         if use_anthropic:
-            try:
-                from anthropic import AsyncAnthropic
-            except ImportError:
-                pass  # fall through to old API
-            else:
-                try:
-                    self._last_truncated = False
-                    tools_arg = [{"type": "web_search_20260209", "name": "web_search", "max_uses": with_search}] if with_search > 0 else None
-                    client = AsyncAnthropic(api_key=api_key, base_url=base_url)
-                    t0 = time.monotonic()
-                    kwargs = dict(model=model, max_tokens=max_tokens,
-                                  messages=[{"role": "user", "content": prompt}],
-                                  system="Output ONLY the requested JSON format, no markdown, no explanations. Search only for specific, essential facts. Do not broad-search.",
-                                  thinking={"type": "enabled" if with_search > 0 else "disabled"})
-                    if tools_arg:
-                        kwargs["tools"] = tools_arg
-                    response = await client.messages.create(**kwargs)
-                    await client.close()
+            text = await self._anthropic_call(api_key, base_url, model, prompt, max_tokens, with_search, restored)
+            if text is not None:
+                return text
 
-                    elapsed = time.monotonic() - t0
-                    usage = getattr(response, "usage", None)
-                    if usage:
-                        out_tk = getattr(usage, "output_tokens", 0)
-                        self.inv._debug_log(
-                            f"LLM token: in={getattr(usage, 'input_tokens', '?')} "
-                            f"out={out_tk} "
-                            f"cache_read={getattr(usage, 'cache_read_input_tokens', 0)} "
-                            f"耗时={elapsed:.1f}s"
-                        )
-                        self._last_truncated = out_tk >= max_tokens
-                        if self._last_truncated:
-                            self.logger.warning(
-                                f"LLM 输出截断! out={out_tk} >= max={max_tokens}，考虑调高对应 max_tokens 配置"
-                            )
-
-                    # 记录各 block 类型
-                    block_types = [getattr(b, "type", "?") for b in response.content]
-                    self.inv._debug_log(f"LLM blocks: {block_types}")
-
-                    text = " ".join(
-                        b.text for b in response.content
-                        if hasattr(b, "text") and b.text
-                    )
-                    self.inv._debug_log(f"LLM 原生响应: {text[:200]}")
-                    return text  # 即使空也不回退旧API，交给 _llm_generate 重试
-                except Exception as e:
-                    self.inv._debug_log(f"Anthropic 直连失败，回退旧 API: {e}")
-                finally:
-                    for k, v in restored.items():
-                        if v is None: del os.environ[k]
-                        else: os.environ[k] = v
-                    restored.clear()
-
-        # 旧 API 回退（无 Anthropic key 时用）
+        # 旧 API 回退（无 Anthropic key 或直连失败时）
+        self.inv._debug_log(f"进入旧API回退路径: task={task_name}")
         try:
             result = await llm_service.generate(
                 llm_service.LLMServiceRequest(
@@ -152,10 +188,19 @@ class LLMClientMixin:
             )
             if result.success and result.completion.response:
                 raw = result.completion.response.strip()
-                self.inv._debug_log(f"LLM token(旧API): {getattr(result.completion, 'usage', 'N/A')}")
+                self.inv._debug_log(
+                    f"LLM token(旧API): {getattr(result.completion, 'usage', None)} "
+                    f"success={result.success} "
+                    f"len={len(raw)}"
+                )
                 return raw
+            else:
+                self.inv._debug_log(
+                    f"旧API返回无效: success={result.success} "
+                    f"has_response={bool(result.completion and result.completion.response)}"
+                )
         except Exception as e:
-            self.logger.error(f"LLM 调用失败: {e}")
+            self.logger.error(f"LLM 调用失败(旧API): {type(e).__name__}: {e}")
         return ""
 
     # ── 外部搜索 ──────────────────────────────────────────
