@@ -115,13 +115,20 @@ class ComfyUIDrawInvocation:
             self._debug_log(f"调用 MCP 工具: {tool_name}, 参数: {arguments}")
             result = await self._session.call_tool(tool_name, arguments)
             self._debug_log(f"MCP 工具结果: {str(result)[:200]}")
+            if getattr(result, "isError", False):
+                err_text = ""
+                if hasattr(result, "content") and result.content:
+                    err_text = getattr(result.content[0], "text", str(result.content[0]))
+                raise RuntimeError(
+                    f"MCP 工具返回错误: tool={tool_name}: {err_text or '未知错误'}"
+                )
             return result
         except Exception as e:
             self.logger.error(
                 f"调用 MCP 工具失败: tool={tool_name}, args={arguments}, "
                 f"error={type(e).__name__}: {e}"
             )
-            return None
+            raise
 
     # ── MCP 结果解析 ────────────────────────────────────────
 
